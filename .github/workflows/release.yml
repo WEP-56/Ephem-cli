@@ -7,14 +7,15 @@ name: Release
 #
 # 流程：
 #   1. build-android  → 构建 3 个 APK（arm64-v8a / armeabi-v7a / x86_64）
-#   2. build-npm      → 构建 CLI → 发布到 npm registry → 打包 tarball + 单文件二进制
+#   2. build-npm      → 构建 CLI → 打包 tarball + 单文件二进制（不上传 npm）
 #   3. release        → 等前两个都成功 → 创建 GitHub Release，附上全部产物
 #
 # 最终 Release 包含：
 #   - ephem-{version}-arm64-v8a.apk
 #   - ephem-{version}-armeabi-v7a.apk
 #   - ephem-{version}-x86_64.apk
-#   - ephem-cli-{version}.tgz        （npm 包，可 npm i -g 离线安装）
+#   - ephem-cli-{version}.tgz        （npm 包，可 npm i -g 离线安装；
+#                                      维护者本地 npm publish 上传到 registry）
 #   - ephem-cli-{version}.js          （单文件，node 直接跑，无需 npm）
 # ─────────────────────────────────────────────────────────────
 
@@ -86,13 +87,15 @@ jobs:
             packages/flutter_app/build/app/outputs/flutter-apk/ephem-*.apk
           retention-days: 30
 
-  # ── Job 2: 构建 + 发布 npm + 打包 ─────────────────────────
+  # ── Job 2: 构建 CLI 并打包（不上传到 npm registry）────────
+  # 设计取舍：npm 上传由用户在本地手动执行 `npm publish`，
+  # CI 只负责产出 tgz + 单文件 js 附到 Release。
+  # 这样避免了 2FA / token 类型的麻烦，发布更可控。
   build-npm:
-    name: Build & Publish npm
+    name: Build & Pack CLI
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      id-token: write  # npm provenance（来源证明）需要
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -101,7 +104,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: "18"
-          registry-url: "https://registry.npmjs.org"
           cache: npm
           cache-dependency-path: packages/cli/package-lock.json
 
@@ -121,14 +123,9 @@ jobs:
         working-directory: packages/cli
         run: npm publish --dry-run
 
-      - name: Publish to npm
-        working-directory: packages/cli
-        run: npm publish --access public --provenance
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-
       # 打 npm tarball（包含 package.json + dist/index.js 等，
-      # 用户可 npm install ./ephem-cli-0.1.0.tgz 离线安装）
+      # 用户可 npm install ./ephem-cli-0.1.0.tgz 离线安装，
+      # 维护者也可本地 npm publish ./ephem-cli-0.1.0.tgz 发布到 registry）
       - name: Pack tarball
         working-directory: packages/cli
         run: |
