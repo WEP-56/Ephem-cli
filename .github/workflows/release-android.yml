@@ -1,0 +1,95 @@
+name: Release Android
+
+# 触发条件：推送 v* 格式的 tag（与 npm 发布共用同一 tag）
+# 也可以手动触发
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+jobs:
+  build-android:
+    name: Build Android APK
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write  # 上传产物到 Release 需要
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: "3.10"
+          cache: true
+
+      - name: Flutter version
+        working-directory: packages/flutter_app
+        run: flutter --version
+
+      - name: Download dependencies
+        working-directory: packages/flutter_app
+        run: flutter pub get
+
+      - name: Analyze (lint)
+        working-directory: packages/flutter_app
+        run: flutter analyze
+        continue-on-error: true  # lint 不阻塞 release
+
+      - name: Build APK (split per ABI)
+        working-directory: packages/flutter_app
+        run: flutter build apk --release --split-per-abi
+
+      # 把 3 个 APK 重命名成更友好的名字
+      - name: Rename APKs
+        working-directory: packages/flutter_app/build/app/outputs/flutter-apk
+        run: |
+          VERSION=${GITHUB_REF_NAME#v}
+          for arch in arm64-v8a armeabi-v7a x86_64; do
+            if [ -f "app-${arch}-release.apk" ]; then
+              mv "app-${arch}-release.apk" "ephem-${VERSION}-${arch}.apk"
+            fi
+          done
+          ls -la
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-apks
+          path: |
+            packages/flutter_app/build/app/outputs/flutter-apk/ephem-*.apk
+          retention-days: 30
+
+      - name: Attach to GitHub Release
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          files: |
+            packages/flutter_app/build/app/outputs/flutter-apk/ephem-*.apk
+          generate_release_notes: true
+          draft: false
+          prerelease: false
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "## Android Build Result" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ job.status }}" = "success" ]; then
+            echo "✅ APK 构建成功，已上传到 GitHub Release" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "产物：" >> $GITHUB_STEP_SUMMARY
+            ls packages/flutter_app/build/app/outputs/flutter-apk/ephem-*.apk | while read f; do
+              echo "- \`$(basename $f)\`" >> $GITHUB_STEP_SUMMARY
+            done
+          else
+            echo "❌ 构建失败" >> $GITHUB_STEP_SUMMARY
+          fi

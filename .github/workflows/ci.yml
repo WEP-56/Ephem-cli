@@ -1,0 +1,141 @@
+name: CI
+
+# 每次 push 到 main 或开 PR 时跑：保证提交不破坏构建
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  # ── CLI 类型检查 + 构建 ──────────────────────
+  cli-build:
+    name: CLI Type Check & Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "18"
+          cache: npm
+          cache-dependency-path: packages/cli/package-lock.json
+
+      - name: Install
+        working-directory: packages/cli
+        run: npm ci
+
+      - name: Type check
+        working-directory: packages/cli
+        run: npx tsc --noEmit
+
+      - name: Build
+        working-directory: packages/cli
+        run: npm run build
+
+      - name: Verify binary runs
+        working-directory: packages/cli
+        run: node dist/index.js --help
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: cli-dist
+          path: packages/cli/dist/
+          retention-days: 7
+
+  # ── 后端类型检查 ────────────────────────────
+  backend-typecheck:
+    name: Backend Type Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "18"
+          cache: npm
+          cache-dependency-path: packages/backend-cloudflare/package-lock.json
+
+      - name: Install
+        working-directory: packages/backend-cloudflare
+        run: npm ci
+
+      - name: Type check
+        working-directory: packages/backend-cloudflare
+        run: npx tsc --noEmit
+
+  # ── 端到端集成测试 ──────────────────────────
+  integration-test:
+    name: Integration Test (E2E)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "18"
+          cache: npm
+          cache-dependency-path: |
+            packages/backend-cloudflare/package-lock.json
+            packages/cli/package-lock.json
+
+      - name: Install backend deps
+        working-directory: packages/backend-cloudflare
+        run: npm ci
+
+      - name: Install CLI deps
+        working-directory: packages/cli
+        run: npm ci
+
+      - name: Start wrangler dev (background)
+        working-directory: packages/backend-cloudflare
+        run: |
+          npx wrangler dev --port 8787 &
+          echo $! > /tmp/wrangler.pid
+          # 等待服务起来
+          for i in {1..30}; do
+            if curl -s http://127.0.0.1:8787/ > /dev/null 2>&1; then
+              echo "wrangler is up"
+              break
+            fi
+            sleep 1
+          done
+
+      - name: Run integration tests
+        working-directory: packages/cli
+        run: |
+          NODE_PATH=$(pwd)/node_modules node integration-test.mjs
+
+      - name: Stop wrangler
+        if: always()
+        run: |
+          if [ -f /tmp/wrangler.pid ]; then
+            kill $(cat /tmp/wrangler.pid) 2>/dev/null || true
+          fi
+
+  # ── Flutter 端分析（可选，跑不了就跳过）─────
+  flutter-analyze:
+    name: Flutter Analyze
+    runs-on: ubuntu-latest
+    continue-on-error: true  # Flutter 端 lint 不阻塞主线
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: "3.10"
+
+      - name: Pub get
+        working-directory: packages/flutter_app
+        run: flutter pub get
+
+      - name: Analyze
+        working-directory: packages/flutter_app
+        run: flutter analyze

@@ -4,6 +4,10 @@
 
 **房间到期或人数耗尽后自动销毁，不留持久化记录。后端只转发密文，看不到任何聊天内容。**
 
+![CI](https://github.com/WEP-56/Ephem-cli/actions/workflows/ci.yml/badge.svg)
+![NPM](https://github.com/WEP-56/Ephem-cli/actions/workflows/release-npm.yml/badge.svg)
+![Android](https://github.com/WEP-56/Ephem-cli/actions/workflows/release-android.yml/badge.svg)
+
 ```
 ephem · correct-horse-battery  2/2 人                          ⏳ 00:57:47
 输入消息回车发送 · Ctrl+C 退出
@@ -152,9 +156,21 @@ ephem/
 | 加密 | Node 内置 `crypto` (HKDF-SHA256 + AES-256-GCM) |
 | WebSocket | `ws` 库 |
 | 参数解析 | `commander` |
+| 移动端 | [Flutter](https://flutter.dev/) (Android/iOS) |
 | 后端运行时 | [Cloudflare Workers](https://workers.cloudflare.com/) |
 | 有状态存储 | [Durable Objects](https://developers.cloudflare.com/durable-objects/) |
 | 构建 | [tsup](https://tsup.egoist.dev/) |
+| CI/CD | [GitHub Actions](./.github/workflows/README.md) |
+
+## 持续集成与发布
+
+三个 GitHub Actions 工作流自动处理构建、测试、发布：
+
+- **CI**（每次提交）：类型检查 + 集成测试 + Flutter 分析
+- **Release NPM**（推 `v*` tag）：发布 `ephem-cli` 到 npm
+- **Release Android**（推 `v*` tag）：构建 APK 并附到 GitHub Release
+
+发版流程详见 [.github/workflows/README.md](./.github/workflows/README.md)。
 
 ## License
 
