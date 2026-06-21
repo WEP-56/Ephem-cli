@@ -5,8 +5,7 @@
 **房间到期或人数耗尽后自动销毁，不留持久化记录。后端只转发密文，看不到任何聊天内容。**
 
 ![CI](https://github.com/WEP-56/Ephem-cli/actions/workflows/ci.yml/badge.svg)
-![NPM](https://github.com/WEP-56/Ephem-cli/actions/workflows/release-npm.yml/badge.svg)
-![Android](https://github.com/WEP-56/Ephem-cli/actions/workflows/release-android.yml/badge.svg)
+![Release](https://github.com/WEP-56/Ephem-cli/actions/workflows/release.yml/badge.svg)
 
 ```
 ephem · correct-horse-battery  2/2 人                          ⏳ 00:57:47

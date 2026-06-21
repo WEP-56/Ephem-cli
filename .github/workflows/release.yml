@@ -1,0 +1,226 @@
+name: Release
+
+# ─────────────────────────────────────────────────────────────
+# Ephem 统一发版流程（tag 驱动）
+#
+# 触发：推送 v* 格式的 tag（如 v0.1.0），或在 Actions 页面手动触发
+#
+# 流程：
+#   1. build-android  → 构建 3 个 APK（arm64-v8a / armeabi-v7a / x86_64）
+#   2. build-npm      → 构建 CLI → 发布到 npm registry → 打包 tarball + 单文件二进制
+#   3. release        → 等前两个都成功 → 创建 GitHub Release，附上全部产物
+#
+# 最终 Release 包含：
+#   - ephem-{version}-arm64-v8a.apk
+#   - ephem-{version}-armeabi-v7a.apk
+#   - ephem-{version}-x86_64.apk
+#   - ephem-cli-{version}.tgz        （npm 包，可 npm i -g 离线安装）
+#   - ephem-cli-{version}.js          （单文件，node 直接跑，无需 npm）
+# ─────────────────────────────────────────────────────────────
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+jobs:
+  # ── Job 1: 构建 Android APK ────────────────────────────────
+  build-android:
+    name: Build Android APKs
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Flutter version
+        working-directory: packages/flutter_app
+        run: flutter --version
+
+      - name: Download dependencies
+        working-directory: packages/flutter_app
+        run: flutter pub get
+
+      # android/ 平台脚手架已纳入版本控制（含 main/AndroidManifest.xml
+      # 里显式声明的 INTERNET 权限，release 构建必需）。
+      # 切勿再跑 `flutter create . --platforms=android`，否则会覆盖 AndroidManifest
+      # 导致 release APK 重新丢失联网权限。
+
+      - name: Analyze (lint)
+        working-directory: packages/flutter_app
+        run: flutter analyze
+        continue-on-error: true  # lint 不阻塞 release
+
+      - name: Build APK (split per ABI)
+        working-directory: packages/flutter_app
+        run: flutter build apk --release --split-per-abi
+
+      - name: Rename APKs
+        working-directory: packages/flutter_app/build/app/outputs/flutter-apk
+        run: |
+          VERSION=${GITHUB_REF_NAME#v}
+          for arch in arm64-v8a armeabi-v7a x86_64; do
+            if [ -f "app-${arch}-release.apk" ]; then
+              mv "app-${arch}-release.apk" "ephem-${VERSION}-${arch}.apk"
+            fi
+          done
+          ls -la
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-apks
+          path: |
+            packages/flutter_app/build/app/outputs/flutter-apk/ephem-*.apk
+          retention-days: 30
+
+  # ── Job 2: 构建 + 发布 npm + 打包 ─────────────────────────
+  build-npm:
+    name: Build & Publish npm
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write  # npm provenance（来源证明）需要
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "18"
+          registry-url: "https://registry.npmjs.org"
+          cache: npm
+          cache-dependency-path: packages/cli/package-lock.json
+
+      - name: Install dependencies
+        working-directory: packages/cli
+        run: npm ci
+
+      - name: Type check
+        working-directory: packages/cli
+        run: npx tsc --noEmit
+
+      - name: Build
+        working-directory: packages/cli
+        run: npm run build
+
+      - name: Verify package contents (dry run)
+        working-directory: packages/cli
+        run: npm publish --dry-run
+
+      - name: Publish to npm
+        working-directory: packages/cli
+        run: npm publish --access public --provenance
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      # 打 npm tarball（包含 package.json + dist/index.js 等，
+      # 用户可 npm install ./ephem-cli-0.1.0.tgz 离线安装）
+      - name: Pack tarball
+        working-directory: packages/cli
+        run: |
+          npm pack
+          ls -la *.tgz
+
+      # 复制单文件二进制（带 shebang，node ephem-cli-0.1.0.js 直接跑，
+      # 不需要 npm 安装，适合没装 node 包管理器的机器）
+      - name: Prepare standalone binary
+        working-directory: packages/cli
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          cp dist/index.js "../ephem-cli-${VERSION}.js"
+          ls -la "../ephem-cli-${VERSION}.js"
+
+      - name: Upload npm assets
+        uses: actions/upload-artifact@v4
+        with:
+          name: npm-assets
+          path: |
+            packages/cli/ephem-cli-*.tgz
+            ephem-cli-*.js
+          retention-days: 30
+
+  # ── Job 3: 创建 GitHub Release（等前两个都成功）──────────
+  release:
+    name: Create GitHub Release
+    needs: [build-android, build-npm]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+
+      - name: Gather release files
+        run: |
+          mkdir -p assets
+          # 把所有 artifact 里的文件平铺到 assets/
+          find release-assets -type f -exec cp {} assets/ \;
+          echo "=== Release 文件清单 ==="
+          ls -la assets/
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: assets/*
+          generate_release_notes: true
+          draft: false
+          prerelease: false
+          body: |
+            ## 📦 下载
+
+            ### Android 客户端
+            | 文件 | 适用架构 | 常见设备 |
+            |------|----------|----------|
+            | `ephem-${{ github.ref_name }}-arm64-v8a.apk` | 64 位 ARM | 绝大多数现代手机 |
+            | `ephem-${{ github.ref_name }}-armeabi-v7a.apk` | 32 位 ARM | 旧款手机 |
+            | `ephem-${{ github.ref_name }}-x86_64.apk` | 64 位 x86 | 模拟器 |
+
+            ### 命令行客户端
+            | 文件 | 说明 |
+            |------|------|
+            | `ephem-cli-*.tgz` | npm 包，`npm install -g ephem-cli-*.tgz` 离线安装 |
+            | `ephem-cli-*.js` | 单文件，`node ephem-cli-*.js --help` 直接运行 |
+
+            也可通过 npm 在线安装最新版：
+            ```bash
+            npm install -g ephem-cli
+            ```
+
+            ---
+            以下是自动生成的变更日志：
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "## Release Result" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ job.status }}" = "success" ]; then
+            echo "✅ GitHub Release 已创建" >> $GITHUB_STEP_SUMMARY
+            echo "查看：https://github.com/${{ github.repository }}/releases/tag/${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "### 产物清单" >> $GITHUB_STEP_SUMMARY
+            ls -1 assets/ | while read f; do
+              echo "- \`$f\`" >> $GITHUB_STEP_SUMMARY
+            done
+          else
+            echo "❌ Release 创建失败" >> $GITHUB_STEP_SUMMARY
+          fi
