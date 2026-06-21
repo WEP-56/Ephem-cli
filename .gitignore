@@ -4,6 +4,9 @@ dist/
 .wrangler/
 .env
 
+# WorkBuddy 助手工作目录（AI 内部状态/日志，不属于项目代码）
+.workbuddy/
+
 # IDE
 .vscode/
 .idea/
