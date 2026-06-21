@@ -16,6 +16,7 @@ new_sqlite_classes = ["RoomObject"]
 [assets]
 directory = "./public"
 
-# Admin API 鉴权密码。生产环境请用 `wrangler secret put ADMIN_PASSWORD` 覆盖。
-[vars]
-ADMIN_PASSWORD = "change-me-in-production"
+# Admin API 鉴权密码。请使用以下命令设置（不要在文件里明文写）：
+#   wrangler secret put ADMIN_PASSWORD
+# [vars]
+# ADMIN_PASSWORD = ""  ← 不要在这里填！
