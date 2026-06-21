@@ -94,6 +94,16 @@ CLI 用 `--server wss://...` 连接即可。
 
 详见 [DEPLOY.md](./DEPLOY.md) 的备选方案章节。
 
+## 第三方客户端接入
+
+后端是标准 HTTP + WebSocket 接口，任何平台都能对接。完整协议规范见 **[API.md](./API.md)**：
+
+- [Flutter / Android / iOS](./API.md#8-flutter-客户端实现指引)（含 Dart 加密示例代码）
+- Web 浏览器（已计划）
+- 桌面应用
+
+加房间码 → 派生密钥 → WSS 连接 → 收发密文，按文档走就能和官方 `ephem-cli` 互通。
+
 ## npm 发布
 
 详见 [PUBLISH.md](./PUBLISH.md)
