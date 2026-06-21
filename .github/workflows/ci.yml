@@ -87,11 +87,8 @@ jobs:
         working-directory: packages/flutter_app
         run: flutter pub get
 
-      # 生成 Android 平台脚手架（仓库里只保留了 lib/ 和 pubspec.yaml）
-      - name: Generate Android platform files
-        working-directory: packages/flutter_app
-        run: flutter create . --platforms=android --project-name ephem_flutter
-
+      # android/ 平台脚手架已纳入版本控制，无需再临时生成。
+      # flutter analyze 只检查 Dart 代码，不依赖平台目录。
       - name: Analyze
         working-directory: packages/flutter_app
         run: flutter analyze
