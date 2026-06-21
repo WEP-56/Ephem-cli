@@ -111,11 +111,9 @@ jobs:
 
       - name: Run integration tests
         working-directory: packages/cli
-        env:
-          # GitHub Actions runner 上没有代理，但显式禁用更稳
-          NO_PROXY: "127.0.0.1,localhost"
-          no_proxy: "127.0.0.1,localhost"
         run: |
+          # GitHub Actions runner 上有些会走代理，显式排除 localhost
+          export NO_PROXY="127.0.0.1,localhost"
           NODE_PATH=$(pwd)/node_modules node integration-test.mjs
 
       - name: Show wrangler logs on failure
