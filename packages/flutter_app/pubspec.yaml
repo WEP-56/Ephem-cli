@@ -21,7 +21,8 @@ dependencies:
   shared_preferences: ^2.2.0
 
   # 设置页里"打开浏览器"跳转按钮
-  url_launcher: ^6.2.0
+  # 锁在 6.1.x：6.2+ 需要 Dart 3.1+，与 Flutter 3.10 不兼容
+  url_launcher: ">=6.1.0 <6.2.0"
 
   #cupertino_icons: ^1.0.2
 

@@ -95,6 +95,27 @@ process.on("uncaughtException", (e) => {
 });
 
 async function main() {
+  // ── 健康检查：确保后端已起来 ──────────────
+  console.log("[0] 等待后端就绪");
+  let ready = false;
+  for (let i = 0; i < 60; i++) {
+    try {
+      const res = await fetch(`${HTTP}/`, { signal: AbortSignal.timeout(2000) });
+      if (res.ok || res.status === 200) {
+        ready = true;
+        break;
+      }
+    } catch {
+      /* 还没起来，继续等 */
+    }
+    await sleep(1000);
+  }
+  if (!ready) {
+    console.error("✗ 后端在 60 秒内未就绪，跳过集成测试");
+    process.exit(1);
+  }
+  console.log("  ✓ 后端已就绪");
+
   // ── 建房 ──────────────────────────────
   console.log("\n[1] 创建房间");
   const r = await fetch(`${HTTP}/api/rooms`, {
@@ -102,8 +123,13 @@ async function main() {
     headers: { "Content-Type": "application/json", "X-Admin-Key": ADMIN_KEY },
     body: JSON.stringify({ maxMembers: 3, ttlSeconds: 600 }),
   });
+  if (!r.ok) {
+    const text = await r.text();
+    console.error(`✗ 建房失败 HTTP ${r.status}: ${text}`);
+    process.exit(1);
+  }
   const room = await r.json();
-  assert(r.status === 200 && !!room.roomCode, `房间已创建：${room.roomCode}`);
+  assert(!!room.roomCode, `房间已创建：${room.roomCode}`);
   const key = deriveKey(room.roomCode);
 
   // ── 状态查询（需鉴权）────────────────

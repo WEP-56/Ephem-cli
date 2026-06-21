@@ -91,21 +91,39 @@ jobs:
       - name: Start wrangler dev (background)
         working-directory: packages/backend-cloudflare
         run: |
-          npx wrangler dev --port 8787 &
+          # --local 显式本地模式；--ip 0.0.0.0 避免某些 CI 网络栈问题
+          npx wrangler dev --local --ip 127.0.0.1 --port 8787 > /tmp/wrangler.log 2>&1 &
           echo $! > /tmp/wrangler.pid
-          # 等待服务起来
-          for i in {1..30}; do
-            if curl -s http://127.0.0.1:8787/ > /dev/null 2>&1; then
-              echo "wrangler is up"
+          # 等待服务起来（最多 90 秒）
+          for i in {1..90}; do
+            if curl -sf http://127.0.0.1:8787/ > /dev/null 2>&1; then
+              echo "wrangler is up (after ${i}s)"
               break
             fi
             sleep 1
           done
+          # 最终检查
+          if ! curl -sf http://127.0.0.1:8787/ > /dev/null 2>&1; then
+            echo "wrangler failed to start, logs:"
+            cat /tmp/wrangler.log
+            exit 1
+          fi
 
       - name: Run integration tests
         working-directory: packages/cli
+        env:
+          # GitHub Actions runner 上没有代理，但显式禁用更稳
+          NO_PROXY: "127.0.0.1,localhost"
+          no_proxy: "127.0.0.1,localhost"
         run: |
           NODE_PATH=$(pwd)/node_modules node integration-test.mjs
+
+      - name: Show wrangler logs on failure
+        if: failure()
+        run: |
+          echo "=== wrangler logs ==="
+          cat /tmp/wrangler.log || echo "(no log file)"
+          echo "=== end logs ==="
 
       - name: Stop wrangler
         if: always()
@@ -113,6 +131,8 @@ jobs:
           if [ -f /tmp/wrangler.pid ]; then
             kill $(cat /tmp/wrangler.pid) 2>/dev/null || true
           fi
+          # 给点时间让进程退出
+          sleep 2
 
   # ── Flutter 端分析（可选，跑不了就跳过）─────
   flutter-analyze:
@@ -130,7 +150,7 @@ jobs:
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
-          flutter-version: "3.10"
+          # 用最新 stable，避免 Dart SDK 与依赖版本不匹配
 
       - name: Pub get
         working-directory: packages/flutter_app
