@@ -78,7 +78,7 @@ class _ChatPageState extends State<ChatPage> {
           });
         case ErrorEvent():
           _connectError = e.message.isEmpty ? e.code : e.message;
-          _messages.add(_ChatLine.system('错误：${_connectError}'));
+          _messages.add(_ChatLine.system('错误：$_connectError'));
       }
       _scrollToBottom();
     });
@@ -210,7 +210,7 @@ class _ChatPageState extends State<ChatPage> {
             decoration: BoxDecoration(
               color: Theme.of(context).colorScheme.surfaceContainerHighest
                   .withAlpha(80),
-              border: Border(
+              border: const Border(
                 top: BorderSide(color: Colors.white12),
               ),
             ),
@@ -286,7 +286,7 @@ class _ChatPageState extends State<ChatPage> {
                 children: [
                   if (!line.self)
                     Text(
-                      line.from,
+                      line.from ?? '',
                       style: TextStyle(
                         fontSize: 12,
                         color: Theme.of(context).colorScheme.secondary,

@@ -22,14 +22,16 @@ class EphemCrypto {
   /// 从房间码派生房间加密密钥（32 字节）。
   /// 全程在内存中完成，房间码本身不因此通过网络发给后端。
   static Future<SecretKey> deriveRoomKey(String roomCode) async {
-    final hkdf = Hkdf.sha256();
+    final hkdf = Hkdf(
+      macAlgorithm: Hmac.sha256(),
+      outputLength: _keyLength,
+    );
     final secretKey = SecretKey(utf8.encode(roomCode));
     return hkdf.deriveKey(
       secretKey: secretKey,
       // cryptography 包里 nonce 字段即 HKDF 标准里的 salt
       nonce: utf8.encode(_salt),
       info: utf8.encode(_info),
-      outputLength: _keyLength,
     );
   }
 

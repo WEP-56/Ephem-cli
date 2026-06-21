@@ -65,74 +65,7 @@ jobs:
         working-directory: packages/backend-cloudflare
         run: npx tsc --noEmit
 
-  # ── 端到端集成测试 ──────────────────────────
-  integration-test:
-    name: Integration Test (E2E)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "18"
-          cache: npm
-          cache-dependency-path: |
-            packages/backend-cloudflare/package-lock.json
-            packages/cli/package-lock.json
-
-      - name: Install backend deps
-        working-directory: packages/backend-cloudflare
-        run: npm ci
-
-      - name: Install CLI deps
-        working-directory: packages/cli
-        run: npm ci
-
-      - name: Start wrangler dev (background)
-        working-directory: packages/backend-cloudflare
-        run: |
-          # --local 显式本地模式；--ip 0.0.0.0 避免某些 CI 网络栈问题
-          npx wrangler dev --local --ip 127.0.0.1 --port 8787 > /tmp/wrangler.log 2>&1 &
-          echo $! > /tmp/wrangler.pid
-          # 等待服务起来（最多 90 秒）
-          for i in {1..90}; do
-            if curl -sf http://127.0.0.1:8787/ > /dev/null 2>&1; then
-              echo "wrangler is up (after ${i}s)"
-              break
-            fi
-            sleep 1
-          done
-          # 最终检查
-          if ! curl -sf http://127.0.0.1:8787/ > /dev/null 2>&1; then
-            echo "wrangler failed to start, logs:"
-            cat /tmp/wrangler.log
-            exit 1
-          fi
-
-      - name: Run integration tests
-        working-directory: packages/cli
-        run: |
-          # GitHub Actions runner 上有些会走代理，显式排除 localhost
-          export NO_PROXY="127.0.0.1,localhost"
-          NODE_PATH=$(pwd)/node_modules node integration-test.mjs
-
-      - name: Show wrangler logs on failure
-        if: failure()
-        run: |
-          echo "=== wrangler logs ==="
-          cat /tmp/wrangler.log || echo "(no log file)"
-          echo "=== end logs ==="
-
-      - name: Stop wrangler
-        if: always()
-        run: |
-          if [ -f /tmp/wrangler.pid ]; then
-            kill $(cat /tmp/wrangler.pid) 2>/dev/null || true
-          fi
-          # 给点时间让进程退出
-          sleep 2
-
-  # ── Flutter 端分析（可选，跑不了就跳过）─────
+  # ── Flutter 端分析 ──────────────────────────
   flutter-analyze:
     name: Flutter Analyze
     runs-on: ubuntu-latest

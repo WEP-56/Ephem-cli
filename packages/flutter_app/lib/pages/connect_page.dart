@@ -205,7 +205,7 @@ class _ConnectPageState extends State<ConnectPage> {
 }
 
 /// 强制小写输入格式器
-class LowerCaseTextFormatter extends TextInputFormatter with TextInputFormatter {
+class LowerCaseTextFormatter extends TextInputFormatter {
   @override
   TextEditingValue formatEditUpdate(
       TextEditingValue oldValue, TextEditingValue newValue) {

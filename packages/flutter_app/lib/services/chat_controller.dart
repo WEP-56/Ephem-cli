@@ -8,6 +8,7 @@
 
 import 'dart:async';
 import 'package:flutter/foundation.dart';
+import 'package:cryptography/cryptography.dart';
 import '../crypto/ephem_crypto.dart';
 import '../services/ephem_client.dart';
 
