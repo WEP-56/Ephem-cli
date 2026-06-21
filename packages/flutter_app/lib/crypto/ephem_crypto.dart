@@ -23,7 +23,7 @@ class EphemCrypto {
   /// 全程在内存中完成，房间码本身不因此通过网络发给后端。
   static Future<SecretKey> deriveRoomKey(String roomCode) async {
     final hkdf = Hkdf(
-      macAlgorithm: Hmac.sha256(),
+      hmac: Hmac.sha256(),
       outputLength: _keyLength,
     );
     final secretKey = SecretKey(utf8.encode(roomCode));
