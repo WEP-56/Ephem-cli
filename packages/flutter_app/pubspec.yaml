@@ -1,0 +1,32 @@
+name: ephem_flutter
+description: Ephem 临时加密聊天室 Flutter 客户端（Android/iOS）
+publish_to: "none"
+version: 0.1.0
+
+environment:
+  sdk: ">=3.0.0 <4.0.0"
+  flutter: ">=3.10.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # WebSocket 客户端
+  web_socket_channel: ^2.4.0
+
+  # HKDF + AES-256-GCM（纯 Dart，跨平台一致）
+  cryptography: ^2.5.0
+
+  # 设置持久化
+  shared_preferences: ^2.2.0
+
+  # 设置页里"打开浏览器"跳转按钮
+  url_launcher: ^6.2.0
+
+  #cupertino_icons: ^1.0.2
+
+dev_dependencies:
+  flutter_lints: ^3.0.0
+
+flutter:
+  uses-material-design: true
