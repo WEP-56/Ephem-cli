@@ -1,0 +1,21 @@
+name = "ephem-backend"
+main = "src/index.ts"
+compatibility_date = "2024-12-01"
+
+# 房间状态 Durable Object：每个房间一个实例，自带存储 + alarm 定时器
+[[durable_objects.bindings]]
+name = "ROOM"
+class_name = "RoomObject"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["RoomObject"]
+
+# Admin 静态页面自动托管（匹配不到静态文件的请求才进入 Worker，
+# 因此 /api/* 和 /room/* 的 WS 升级会落到 Worker，/ 直接返回 index.html）
+[assets]
+directory = "./public"
+
+# Admin API 鉴权密码。生产环境请用 `wrangler secret put ADMIN_PASSWORD` 覆盖。
+[vars]
+ADMIN_PASSWORD = "change-me-in-production"

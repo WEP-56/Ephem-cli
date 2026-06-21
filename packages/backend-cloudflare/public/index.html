@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Ephem · 房间管理</title>
+  <style>
+    :root {
+      --bg: #0f1115;
+      --panel: #171a21;
+      --panel-2: #1e222b;
+      --border: #2a2f3a;
+      --text: #e6e9ef;
+      --muted: #8b93a7;
+      --accent: #6ea8fe;
+      --accent-2: #7ee787;
+      --danger: #ff6b6b;
+      --code: #ffd33d;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: -apple-system, "Segoe UI", system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.5;
+    }
+    .wrap { max-width: 760px; margin: 0 auto; padding: 32px 20px 64px; }
+    h1 { font-size: 22px; margin: 0 0 4px; letter-spacing: 0.5px; }
+    h1 .dot { color: var(--accent-2); }
+    .sub { color: var(--muted); font-size: 13px; margin-bottom: 28px; }
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 20px;
+      margin-bottom: 20px;
+    }
+    label { display: block; font-size: 12px; color: var(--muted); margin: 12px 0 6px; text-transform: uppercase; letter-spacing: 0.5px; }
+    input, select {
+      width: 100%;
+      background: var(--panel-2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      padding: 10px 12px;
+      font-size: 14px;
+      font-family: inherit;
+    }
+    input:focus, select:focus { outline: none; border-color: var(--accent); }
+    .row { display: flex; gap: 12px; }
+    .row > * { flex: 1; }
+    button {
+      background: var(--accent);
+      color: #0f1115;
+      border: none;
+      border-radius: 8px;
+      padding: 10px 18px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      font-family: inherit;
+    }
+    button:hover { filter: brightness(1.1); }
+    button.ghost { background: var(--panel-2); color: var(--text); border: 1px solid var(--border); }
+    button.danger { background: var(--danger); color: #fff; }
+    .roomcode {
+      font-family: "SFMono-Regular", Consolas, monospace;
+      font-size: 28px;
+      color: var(--code);
+      background: var(--panel-2);
+      border: 1px dashed var(--border);
+      border-radius: 10px;
+      padding: 18px;
+      text-align: center;
+      word-break: break-all;
+      margin: 16px 0;
+      letter-spacing: 1px;
+    }
+    .meta-line { font-size: 13px; color: var(--muted); text-align: center; }
+    .meta-line b { color: var(--text); }
+    .room-item {
+      display: flex; align-items: center; justify-content: space-between;
+      gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--border);
+    }
+    .room-item:last-child { border-bottom: none; }
+    .room-item .code { font-family: monospace; color: var(--code); font-size: 15px; }
+    .room-item .stat { color: var(--muted); font-size: 12px; }
+    .pill { font-size: 11px; padding: 2px 8px; border-radius: 999px; background: var(--panel-2); color: var(--muted); }
+    .pill.live { background: rgba(126,231,135,0.15); color: var(--accent-2); }
+    .pill.dead { background: rgba(255,107,107,0.15); color: var(--danger); }
+    .toast {
+      position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+      background: var(--panel-2); border: 1px solid var(--border); color: var(--text);
+      padding: 10px 18px; border-radius: 999px; font-size: 13px; opacity: 0; transition: opacity .25s;
+      pointer-events: none;
+    }
+    .toast.show { opacity: 1; }
+    .empty { color: var(--muted); font-size: 13px; text-align: center; padding: 20px 0; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>ephem<span class="dot">·</span> 房间管理</h1>
+    <p class="sub">临时、端到端加密的命令行聊天室。创建房间后把房间码告诉对方，双方在 CLI 里输入即可对话。</p>
+
+    <div class="panel">
+      <label>管理密码 (X-Admin-Key)</label>
+      <input id="adminKey" type="password" placeholder="部署时设置的 ADMIN_PASSWORD" autocomplete="off" />
+      <label>人数上限</label>
+      <input id="maxMembers" type="number" min="2" max="32" value="2" />
+      <label>存活时长</label>
+      <select id="ttl">
+        <option value="900">15 分钟</option>
+        <option value="3600" selected>1 小时</option>
+        <option value="21600">6 小时</option>
+        <option value="86400">24 小时</option>
+      </select>
+      <div style="height:16px"></div>
+      <button id="createBtn">创建房间</button>
+    </div>
+
+    <div id="resultPanel" class="panel" style="display:none">
+      <label>房间码（口头/截图转告对方）</label>
+      <div class="roomcode" id="roomCodeOut"></div>
+      <div class="meta-line" id="roomMetaOut"></div>
+      <div style="height:14px"></div>
+      <button class="ghost" id="copyBtn">复制房间码</button>
+    </div>
+
+    <div class="panel">
+      <label>已创建的房间</label>
+      <div id="roomList"><div class="empty">还没有房间</div></div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+  <script src="/app.js"></script>
+</body>
+</html>

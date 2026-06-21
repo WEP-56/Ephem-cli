@@ -1,0 +1,32 @@
+{
+  "name": "ephem-cli",
+  "version": "0.1.0",
+  "description": "临时、端到端加密的命令行聊天室 CLI",
+  "type": "module",
+  "bin": {
+    "ephem": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "typecheck": "tsc --noEmit",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "commander": "^12.0.0",
+    "ink": "^5.0.0",
+    "ink-text-input": "^6.0.0",
+    "react": "^18.0.0",
+    "ws": "^8.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/react": "^18.0.0",
+    "@types/ws": "^8.0.0",
+    "tsup": "^8.0.0",
+    "typescript": "^5.0.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

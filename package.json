@@ -1,0 +1,15 @@
+{
+  "name": "ephem",
+  "version": "0.1.0",
+  "private": true,
+  "description": "临时、端到端加密的命令行聊天室",
+  "scripts": {
+    "dev:backend": "npm --prefix packages/backend-cloudflare run dev",
+    "build:cli": "npm --prefix packages/cli run build",
+    "dev:cli": "npm --prefix packages/cli run dev",
+    "install:all": "npm --prefix packages/backend-cloudflare install && npm --prefix packages/cli install"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
