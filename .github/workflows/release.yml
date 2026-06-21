@@ -138,7 +138,9 @@ jobs:
         working-directory: packages/cli
         run: |
           VERSION=$(node -p "require('./package.json').version")
-          cp dist/index.js "../ephem-cli-${VERSION}.js"
+          # 复制到仓库根（../../ 从 packages/cli 出来），方便后续 upload-artifact 匹配
+          cp dist/index.js "../../ephem-cli-${VERSION}.js"
+          ls -la "../../ephem-cli-${VERSION}.js"
           ls -la "../ephem-cli-${VERSION}.js"
 
       - name: Upload npm assets
