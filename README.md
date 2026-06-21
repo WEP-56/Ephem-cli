@@ -174,3 +174,6 @@ ephem/
 ## License
 
 MIT
+
+## Linux.do
+[学ai，上L站！](https://linux.do/)
