@@ -48,12 +48,7 @@ https://ephem-backend.<your-subdomain>.workers.dev
 
 WebSocket 把 `https://` 换成 `wss://`。
 
-**生产实例**
-
-```
-https://ephem-backend.pan2222qqcom.workers.dev
-wss://ephem-backend.pan2222qqcom.workers.dev
-```
+> 注：开源项目不预设后端，请按 [DEPLOY.md](./DEPLOY.md) 自行部署。
 
 ---
 

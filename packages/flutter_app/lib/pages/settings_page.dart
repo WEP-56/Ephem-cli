@@ -93,6 +93,7 @@ class _SettingsPageState extends State<SettingsPage> {
             decoration: InputDecoration(
               labelText: '后端地址',
               hintText: 'wss://your-worker.workers.dev',
+              helperText: '开源项目，不预设后端。请填你部署的地址',
               border: const OutlineInputBorder(),
               prefixIcon: const Icon(Icons.dns_outlined),
               suffixIcon: IconButton(

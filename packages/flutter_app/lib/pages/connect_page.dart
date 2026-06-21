@@ -50,6 +50,12 @@ class _ConnectPageState extends State<ConnectPage> {
   }
 
   Future<void> _connect() async {
+    // 后端地址未配置：引导用户去设置
+    if (widget.server.isEmpty) {
+      setState(() => _error = '请先在设置里填写后端地址');
+      return;
+    }
+
     final room = _roomCodeCtrl.text.trim().toLowerCase();
     final user = _usernameCtrl.text.trim().isEmpty
         ? '匿名'
@@ -166,8 +172,14 @@ class _ConnectPageState extends State<ConnectPage> {
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
-                        widget.server,
-                        style: Theme.of(context).textTheme.bodySmall,
+                        widget.server.isEmpty
+                            ? '点此设置后端地址 →'
+                            : widget.server,
+                        style: widget.server.isEmpty
+                            ? Theme.of(context).textTheme.bodySmall?.copyWith(
+                                  color: Theme.of(context).colorScheme.error,
+                                )
+                            : Theme.of(context).textTheme.bodySmall,
                         overflow: TextOverflow.ellipsis,
                       ),
                     ),

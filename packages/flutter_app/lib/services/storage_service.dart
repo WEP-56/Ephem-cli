@@ -9,8 +9,9 @@ class StorageService {
   static const _kProxy = 'ephem.proxy'; // 形如 host:port，留空表示不使用
   static const _kProxyEnabled = 'ephem.proxyEnabled';
 
-  /// 默认后端地址（用户首次安装时给个参考值）
-  static const defaultServer = 'wss://ephem-backend.pan2222qqcom.workers.dev';
+  /// 默认后端地址（空字符串：开源项目，不预设作者私有后端，
+  /// 用户首次进入需到设置页填写自己的后端地址）
+  static const defaultServer = '';
 
   Future<String> getServer() async =>
       (await SharedPreferences.getInstance()).getString(_kServer) ?? defaultServer;
