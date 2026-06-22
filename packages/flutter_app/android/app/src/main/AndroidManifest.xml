@@ -4,7 +4,7 @@
          必须在此显式声明，否则 release APK 无法联网。 -->
     <uses-permission android:name="android.permission.INTERNET"/>
     <application
-        android:label="ephem_flutter"
+        android:label="Ephem"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity

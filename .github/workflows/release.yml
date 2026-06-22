@@ -154,7 +154,7 @@ jobs:
         run: |
           VERSION=${GITHUB_REF_NAME#v}
           ditto -c -k --sequesterRsrc --keepParent \
-            packages/flutter_app/build/macos/Build/Products/Release/ephem_flutter.app \
+            packages/flutter_app/build/macos/Build/Products/Release/Ephem.app \
             "ephem-${VERSION}-macos.zip"
 
       - name: Upload macOS artifact

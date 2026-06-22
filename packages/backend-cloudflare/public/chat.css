@@ -77,6 +77,18 @@ h1 {
   letter-spacing: 0;
 }
 
+.brand-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.brand-title img {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+}
+
 h1 span {
   color: var(--teal);
 }
