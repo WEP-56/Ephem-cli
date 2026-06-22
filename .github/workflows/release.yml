@@ -218,7 +218,6 @@ jobs:
           # 复制到仓库根（../../ 从 packages/cli 出来），方便后续 upload-artifact 匹配
           cp dist/index.js "../../ephem-cli-${VERSION}.js"
           ls -la "../../ephem-cli-${VERSION}.js"
-          ls -la "../ephem-cli-${VERSION}.js"
 
       - name: Upload npm assets
         uses: actions/upload-artifact@v4
