@@ -10,6 +10,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:cryptography/cryptography.dart';
 import '../crypto/ephem_crypto.dart';
+import '../protocol/ephem_message.dart';
 import '../services/ephem_client.dart';
 
 /// 房间信息（来自 joined 消息）
@@ -23,23 +24,46 @@ class RoomInfo {
 
 /// UI 关心的事件
 sealed class ChatEvent {}
-class JoinedEvent extends ChatEvent { final RoomInfo info; JoinedEvent(this.info); }
-class PeerJoinedEvent extends ChatEvent { final String username; PeerJoinedEvent(this.username); }
-class PeerLeftEvent extends ChatEvent { final String username; PeerLeftEvent(this.username); }
+
+class JoinedEvent extends ChatEvent {
+  final RoomInfo info;
+  JoinedEvent(this.info);
+}
+
+class PeerJoinedEvent extends ChatEvent {
+  final String username;
+  PeerJoinedEvent(this.username);
+}
+
+class PeerLeftEvent extends ChatEvent {
+  final String username;
+  PeerLeftEvent(this.username);
+}
+
 class MessageEvent extends ChatEvent {
   final String from;
   final String text; // 已解密的明文
   final int timestamp;
   MessageEvent(this.from, this.text, this.timestamp);
 }
+
+class ImageMessageEvent extends ChatEvent {
+  final String from;
+  final EphemImageMessage image;
+  final int timestamp;
+  ImageMessageEvent(this.from, this.image, this.timestamp);
+}
+
 class DecryptFailedEvent extends ChatEvent {
   final String from;
   DecryptFailedEvent(this.from);
 }
+
 class RoomClosingEvent extends ChatEvent {
   final String reason; // ttl_expired / empty / manual
   RoomClosingEvent(this.reason);
 }
+
 class ErrorEvent extends ChatEvent {
   final String code;
   final String message;
@@ -64,7 +88,8 @@ class ChatController extends ChangeNotifier {
     required String server,
     required String roomCode,
     required String username,
-  }) : _client = EphemClient(server: server, roomCode: roomCode, username: username);
+  }) : _client =
+            EphemClient(server: server, roomCode: roomCode, username: username);
 
   /// 连接并派生密钥
   Future<void> start(String roomCode) async {
@@ -90,17 +115,20 @@ class ChatController extends ChangeNotifier {
           _eventController.add(JoinedEvent(info!));
           break;
         case 'peer_joined':
-          _eventController.add(PeerJoinedEvent(msg.payload['username'] as String));
+          _eventController
+              .add(PeerJoinedEvent(msg.payload['username'] as String));
           break;
         case 'peer_left':
-          _eventController.add(PeerLeftEvent(msg.payload['username'] as String));
+          _eventController
+              .add(PeerLeftEvent(msg.payload['username'] as String));
           break;
         case 'message':
           _handleMessage(msg.payload);
           break;
         case 'room_closing':
           isClosing = true;
-          _eventController.add(RoomClosingEvent(msg.payload['reason'] as String));
+          _eventController
+              .add(RoomClosingEvent(msg.payload['reason'] as String));
           break;
         case 'error':
           final p = msg.payload;
@@ -133,7 +161,13 @@ class ChatController extends ChangeNotifier {
         _roomKey!,
         EncryptedPayload(ciphertext: ciphertext, nonce: nonce),
       );
-      _eventController.add(MessageEvent(from, text, timestamp));
+      final parsed = parsePlaintextMessage(text);
+      switch (parsed) {
+        case EphemTextMessage():
+          _eventController.add(MessageEvent(from, parsed.text, timestamp));
+        case EphemImageMessage():
+          _eventController.add(ImageMessageEvent(from, parsed, timestamp));
+      }
     } catch (e) {
       _eventController.add(DecryptFailedEvent(from));
     }
@@ -143,7 +177,21 @@ class ChatController extends ChangeNotifier {
   Future<bool> send(String text) async {
     if (_roomKey == null) return false;
     try {
-      final payload = await EphemCrypto.encrypt(_roomKey!, text);
+      final payload =
+          await EphemCrypto.encrypt(_roomKey!, encodeTextMessage(text));
+      _client.sendMessage(payload.ciphertext, payload.nonce);
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  /// 发送一张已准备好的图片（会自动加密）。
+  Future<bool> sendImage(EphemImageMessage image) async {
+    if (_roomKey == null) return false;
+    try {
+      final payload =
+          await EphemCrypto.encrypt(_roomKey!, encodeImageMessage(image));
       _client.sendMessage(payload.ciphertext, payload.nonce);
       return true;
     } catch (e) {

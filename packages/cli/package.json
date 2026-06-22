@@ -1,10 +1,10 @@
 {
   "name": "ephem-cli",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "临时、端到端加密的命令行聊天室 CLI",
   "type": "module",
   "bin": {
-    "ephem": "./dist/index.js"
+    "ephem": "dist/index.js"
   },
   "scripts": {
     "build": "tsup",

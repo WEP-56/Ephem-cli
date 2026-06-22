@@ -26,6 +26,8 @@
 - [8. Flutter 客户端实现指引](#8-flutter-客户端实现指引)
 - [9. 限流与配额](#9-限流与配额)
 - [10. 版本与兼容](#10-版本与兼容)
+- [附录：Web 聊天端](#附录web-聊天端)
+- [附录：结构化消息与图片发送协议](#附录结构化消息与图片发送协议)
 
 ---
 
@@ -808,3 +810,115 @@ class EphemClient {
 | HTTP | `rate_limited` | 429 | 连接过于频繁 |
 | HTTP | `room_code_conflict` | 503 | 房间码哈希冲突重试失败 |
 | WS | `bad_message` | - | 客户端发了无法解析的消息 |
+| WS | `message_too_large` | - | 客户端发送的单帧消息过大 |
+
+---
+
+## 附录：Web 聊天端
+
+Web 聊天端固定入口：
+
+```
+https://<后端地址>/chat
+```
+
+用户认证方式与 CLI / Flutter 相同：
+
+1. 打开 `/chat`
+2. 输入房间码
+3. 输入用户名
+4. 浏览器本地用房间码派生密钥
+5. 连接 `wss://<后端地址>/room/:roomCode?username=:username`
+
+Web 聊天端不使用 `X-Admin-Key`，不负责创建房间。创建/销毁房间仍由 Admin 页面和 Admin REST API 完成。
+
+安全要求：
+
+- 房间码不得写入 `localStorage` / `sessionStorage` / `IndexedDB`
+- 派生密钥只保存在内存中
+- 明文消息不持久化
+- 图片预览使用 `Blob` / `URL.createObjectURL`，不要把不可信内容写入 `innerHTML`
+
+---
+
+## 附录：结构化消息与图片发送协议
+
+现有 WebSocket 外层协议保持不变：
+
+```json
+{
+  "type": "message",
+  "payload": {
+    "ciphertext": "<base64>",
+    "nonce": "<base64>"
+  }
+}
+```
+
+图片消息不增加后端可见字段。客户端应把结构化消息 JSON 作为明文整体加密，后端仍然只转发密文。
+
+### 文本消息明文
+
+新客户端发送文本时，建议加密以下 JSON 字符串：
+
+```json
+{
+  "v": 1,
+  "kind": "text",
+  "text": "你好"
+}
+```
+
+兼容旧客户端时，接收端必须支持旧版“纯字符串明文”。解密后如果 `JSON.parse` 失败，则按普通文本显示。
+
+### 图片消息明文
+
+```json
+{
+  "v": 1,
+  "kind": "image",
+  "mime": "image/jpeg",
+  "name": "photo.jpg",
+  "size": 123456,
+  "width": 1280,
+  "height": 720,
+  "data": "<base64 image bytes>",
+  "thumb": {
+    "mime": "image/jpeg",
+    "width": 320,
+    "height": 180,
+    "data": "<base64 thumbnail bytes>"
+  }
+}
+```
+
+限制：
+
+- 首版只做内联加密图片，不引入对象存储
+- 原图发送前应压缩到 `1 MiB` 以内
+- 原图长边建议不超过 `1600 px`
+- 缩略图长边建议不超过 `360 px`
+- 支持 MIME：`image/jpeg`、`image/png`、`image/webp`、`image/gif`
+
+接收端行为：
+
+- `kind=text`：显示 `text`
+- `kind=image`：显示图片气泡；无法渲染图片的平台显示摘要
+- 未识别 `kind`：显示“未知消息类型”
+- JSON 解析失败：按旧版纯文本显示
+
+CLI/TUI 首版图片表现：
+
+```text
+[图片 photo.jpg · 384 KB · image/jpeg]
+```
+
+CLI/TUI 首版发送图片：
+
+```text
+/image C:\Users\me\Pictures\photo.jpg
+```
+
+CLI 会读取本地文件、校验 MIME 和大小、加密后发送。不会自动保存收到的图片到磁盘。
+
+后续如需大图/文件，可升级为“客户端加密 blob + 临时对象存储 URL”的附件协议；该能力不属于首版图片发送范围。

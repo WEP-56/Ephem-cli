@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Ephem · Web 聊天</title>
+  <link rel="stylesheet" href="/chat.css" />
+</head>
+<body>
+  <main class="shell">
+    <section id="connectView" class="connect-view">
+      <div class="brand-row">
+        <div>
+          <h1>ephem<span>·</span>chat</h1>
+          <p>输入房间码和用户名加入临时加密聊天室。</p>
+        </div>
+        <a class="admin-link" href="/" title="打开房间管理">管理</a>
+      </div>
+
+      <form id="connectForm" class="connect-form" autocomplete="off">
+        <label>
+          <span>房间码</span>
+          <input id="roomCode" name="roomCode" inputmode="latin" placeholder="correct-horse-battery" required />
+        </label>
+        <label>
+          <span>用户名</span>
+          <input id="username" name="username" maxlength="32" placeholder="匿名" />
+        </label>
+        <button id="joinBtn" type="submit">加入房间</button>
+        <div id="connectError" class="error" role="status"></div>
+      </form>
+    </section>
+
+    <section id="chatView" class="chat-view" hidden>
+      <header class="chat-header">
+        <div>
+          <div id="roomTitle" class="room-title"></div>
+          <div id="roomMeta" class="room-meta"></div>
+        </div>
+        <div class="header-actions">
+          <span id="connState" class="conn-state">连接中</span>
+          <button id="leaveBtn" class="ghost-btn" type="button" title="离开房间">离开</button>
+        </div>
+      </header>
+
+      <div id="messageList" class="message-list" aria-live="polite"></div>
+
+      <form id="messageForm" class="composer">
+        <input id="imageInput" type="file" accept="image/*" hidden />
+        <button id="imageBtn" class="icon-btn" type="button" title="发送图片">＋</button>
+        <textarea id="messageInput" rows="1" placeholder="输入消息..." autocomplete="off"></textarea>
+        <button id="sendBtn" type="submit">发送</button>
+      </form>
+    </section>
+  </main>
+
+  <script src="/chat.js"></script>
+</body>
+</html>

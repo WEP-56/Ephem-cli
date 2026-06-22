@@ -1,6 +1,6 @@
 # Ephem · Flutter 客户端
 
-> Android / iOS 端的 Ephem 客户端，与官方 `ephem-cli` 协议互通。
+> Android / Windows / macOS 端的 Ephem 客户端，与官方 `ephem-cli` 协议互通。
 
 ## 截图说明
 
@@ -14,6 +14,8 @@
 - Flutter ≥ 3.10（Dart ≥ 3.0）
 - Android Studio / VS Code
 - Android SDK（构建 APK 需要）
+- Windows 桌面构建依赖 Visual Studio C++ 工具链
+- macOS 桌面构建依赖 Xcode（由 GitHub Actions 的 macOS runner 打包）
 
 ## 首次运行
 
@@ -27,7 +29,7 @@ flutter pub get
 flutter run
 ```
 
-## 构建 Release APK
+## 构建 Release
 
 ```bash
 # Android APK
@@ -40,6 +42,12 @@ flutter build apk --release
 
 ```bash
 flutter build apk --release --split-per-abi
+
+# Windows 桌面端
+flutter build windows --release
+
+# macOS 桌面端（需要 macOS）
+flutter build macos --release
 ```
 
 ## 与 CLI 互通测试
@@ -47,7 +55,7 @@ flutter build apk --release --split-per-abi
 1. 用 Admin 页面（设置 Tab 里点跳转按钮）或 CLI 创建一个房间
 2. CLI 端：`ephem --server wss://ephem-backend.xxx.workers.dev --room <房间码> --username alice`
 3. Flutter 端：填同样的后端地址 + 房间码，用户名填 bob，点加入
-4. 双向互发消息，应能正常加解密显示
+4. 双向互发文本和图片，应能正常加解密显示
 
 **关键验证点**：Flutter 加密的消息 CLI 必须能解密，反之亦然。通过了说明加密实现正确。
 
@@ -59,6 +67,8 @@ lib/
 ├── app.dart                        # MaterialApp + 底部导航
 ├── crypto/
 │   └── ephem_crypto.dart           # HKDF + AES-256-GCM（与 CLI 字节级互通）
+├── protocol/
+│   └── ephem_message.dart          # 结构化文本/图片消息协议
 ├── services/
 │   ├── storage_service.dart        # SharedPreferences 持久化
 │   ├── ephem_client.dart           # WebSocket 客户端（心跳/错误识别）

@@ -36,8 +36,7 @@ class _ConnectPageState extends State<ConnectPage> {
   @override
   void didUpdateWidget(ConnectPage oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (widget.username != oldWidget.username &&
-        _usernameCtrl.text.isEmpty) {
+    if (widget.username != oldWidget.username && _usernameCtrl.text.isEmpty) {
       _usernameCtrl.text = widget.username;
     }
   }
@@ -57,9 +56,8 @@ class _ConnectPageState extends State<ConnectPage> {
     }
 
     final room = _roomCodeCtrl.text.trim().toLowerCase();
-    final user = _usernameCtrl.text.trim().isEmpty
-        ? '匿名'
-        : _usernameCtrl.text.trim();
+    final user =
+        _usernameCtrl.text.trim().isEmpty ? '匿名' : _usernameCtrl.text.trim();
 
     if (room.isEmpty) {
       setState(() => _error = '请输入房间码');
@@ -172,9 +170,7 @@ class _ConnectPageState extends State<ConnectPage> {
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
-                        widget.server.isEmpty
-                            ? '点此设置后端地址 →'
-                            : widget.server,
+                        widget.server.isEmpty ? '点此设置后端地址 →' : widget.server,
                         style: widget.server.isEmpty
                             ? Theme.of(context).textTheme.bodySmall?.copyWith(
                                   color: Theme.of(context).colorScheme.error,

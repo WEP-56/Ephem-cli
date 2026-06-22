@@ -69,7 +69,6 @@ jobs:
   flutter-analyze:
     name: Flutter Analyze
     runs-on: ubuntu-latest
-    continue-on-error: true  # Flutter 端 lint 不阻塞主线
     steps:
       - uses: actions/checkout@v4
 
@@ -93,3 +92,46 @@ jobs:
         working-directory: packages/flutter_app
         run: flutter analyze
 
+      - name: Test
+        working-directory: packages/flutter_app
+        run: flutter test
+
+  flutter-windows-build:
+    name: Flutter Windows Build
+    runs-on: windows-latest
+    env:
+      PUB_CACHE: ${{ github.workspace }}\.pub-cache
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Pub get
+        working-directory: packages/flutter_app
+        run: flutter pub get
+
+      - name: Build Windows
+        working-directory: packages/flutter_app
+        run: flutter build windows --release
+
+  flutter-macos-build:
+    name: Flutter macOS Build
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Pub get
+        working-directory: packages/flutter_app
+        run: flutter pub get
+
+      - name: Build macOS
+        working-directory: packages/flutter_app
+        run: flutter build macos --release

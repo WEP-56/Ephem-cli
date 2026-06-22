@@ -42,6 +42,11 @@ export default {
       return stub.fetch(request);
     }
 
+    // Web 聊天端入口。静态资源实际文件是 /chat.html，这里提供干净路由。
+    if (path === "/chat" && request.method === "GET") {
+      return Response.redirect(new URL("/chat.html", request.url).toString(), 302);
+    }
+
     // 非 API / 非 WS 请求交给静态资源（[assets] 已托管 ./public），
     // 这里兜底处理 assets 未命中的情况
     return new Response("Not found", { status: 404 });

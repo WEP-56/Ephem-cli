@@ -1,5 +1,8 @@
 import 'dart:async';
+import 'dart:typed_data';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import '../protocol/ephem_message.dart';
 import '../services/chat_controller.dart';
 import '../services/ephem_client.dart';
 
@@ -62,16 +65,21 @@ class _ChatPageState extends State<ChatPage> {
         case PeerLeftEvent():
           _messages.add(_ChatLine.system('${e.username} 离开了房间'));
         case MessageEvent():
-          _messages.add(_ChatLine.msg(e.from, e.text, e.from == widget.username));
+          _messages
+              .add(_ChatLine.msg(e.from, e.text, e.from == widget.username));
+        case ImageMessageEvent():
+          _messages
+              .add(_ChatLine.image(e.from, e.image, e.from == widget.username));
         case DecryptFailedEvent():
           _messages.add(_ChatLine.system('收到来自 ${e.from} 的无法解密的消息'));
         case RoomClosingEvent():
           _roomClosing = true;
           final reason = {
-            'ttl_expired': '房间已到期',
-            'empty': '房间已空',
-            'manual': '房间被手动销毁',
-          }[e.reason] ?? e.reason;
+                'ttl_expired': '房间已到期',
+                'empty': '房间已空',
+                'manual': '房间被手动销毁',
+              }[e.reason] ??
+              e.reason;
           _messages.add(_ChatLine.system('房间即将关闭：$reason'));
           Future.delayed(const Duration(milliseconds: 1500), () {
             if (mounted) Navigator.of(context).pop();
@@ -128,6 +136,42 @@ class _ChatPageState extends State<ChatPage> {
     }
   }
 
+  Future<void> _pickAndSendImage() async {
+    if (_roomClosing) return;
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.image,
+        withData: true,
+        allowMultiple: false,
+      );
+      final file = result?.files.single;
+      final bytes = file?.bytes;
+      if (file == null || bytes == null) return;
+
+      final image = await prepareImageMessage(
+        bytes: Uint8List.fromList(bytes),
+        fileName: file.name,
+      );
+      final ok = await _ctrl.sendImage(image);
+      if (!mounted) return;
+      if (ok) {
+        setState(() {
+          _messages.add(_ChatLine.image(widget.username, image, true));
+          _scrollToBottom();
+        });
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('发送图片失败：加密出错')),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('发送图片失败：$e')),
+      );
+    }
+  }
+
   @override
   void dispose() {
     _cdTimer?.cancel();
@@ -148,7 +192,8 @@ class _ChatPageState extends State<ChatPage> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Icon(Icons.error_outline, size: 56, color: Colors.redAccent),
+                const Icon(Icons.error_outline,
+                    size: 56, color: Colors.redAccent),
                 const SizedBox(height: 16),
                 Text(_connectError!, textAlign: TextAlign.center),
                 const SizedBox(height: 24),
@@ -167,7 +212,8 @@ class _ChatPageState extends State<ChatPage> {
     final remaining = info == null
         ? null
         : Duration(
-            milliseconds: info.expiresAt - DateTime.now().millisecondsSinceEpoch);
+            milliseconds:
+                info.expiresAt - DateTime.now().millisecondsSinceEpoch);
 
     return Scaffold(
       appBar: AppBar(
@@ -208,7 +254,9 @@ class _ChatPageState extends State<ChatPage> {
               bottom: MediaQuery.of(context).padding.bottom + 8,
             ),
             decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.surfaceContainerHighest
+              color: Theme.of(context)
+                  .colorScheme
+                  .surfaceContainerHighest
                   .withAlpha(80),
               border: const Border(
                 top: BorderSide(color: Colors.white12),
@@ -216,6 +264,12 @@ class _ChatPageState extends State<ChatPage> {
             ),
             child: Row(
               children: [
+                IconButton(
+                  onPressed: _roomClosing ? null : _pickAndSendImage,
+                  icon: const Icon(Icons.add_photo_alternate_outlined),
+                  tooltip: '发送图片',
+                ),
+                const SizedBox(width: 4),
                 Expanded(
                   child: TextField(
                     controller: _inputCtrl,
@@ -262,6 +316,9 @@ class _ChatPageState extends State<ChatPage> {
         ),
       );
     }
+    if (line.image != null) {
+      return _buildImageLine(line);
+    }
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 2),
       child: Row(
@@ -303,6 +360,62 @@ class _ChatPageState extends State<ChatPage> {
     );
   }
 
+  Widget _buildImageLine(_ChatLine line) {
+    final image = line.image!;
+    final preview = image.previewBytes();
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Row(
+        mainAxisAlignment:
+            line.self ? MainAxisAlignment.end : MainAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Flexible(
+            child: Container(
+              constraints: BoxConstraints(
+                maxWidth: MediaQuery.of(context).size.width * 0.75,
+              ),
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: line.self
+                    ? Theme.of(context).colorScheme.primaryContainer
+                    : Theme.of(context).colorScheme.surfaceContainerHighest,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (!line.self)
+                    Text(
+                      line.from ?? '',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Theme.of(context).colorScheme.secondary,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: Image.memory(
+                      preview,
+                      fit: BoxFit.cover,
+                      gaplessPlayback: true,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    imageSummary(image),
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   String _fmtDuration(Duration d) {
     final h = d.inHours;
     final m = d.inMinutes.remainder(60);
@@ -317,11 +430,18 @@ class _ChatLine {
   final bool isSystem;
   final String? from;
   final String text;
+  final EphemImageMessage? image;
   final bool self;
 
   _ChatLine.system(this.text)
       : isSystem = true,
         from = null,
+        image = null,
         self = false;
-  _ChatLine.msg(this.from, this.text, this.self) : isSystem = false;
+  _ChatLine.msg(this.from, this.text, this.self)
+      : isSystem = false,
+        image = null;
+  _ChatLine.image(this.from, this.image, this.self)
+      : isSystem = false,
+        text = '';
 }

@@ -20,8 +20,8 @@ class ServerMessage {
 
   ServerMessage(this.type, this.payload);
 
-  factory ServerMessage.fromJson(Map<String, dynamic> json) =>
-      ServerMessage(json['type'] as String, json['payload'] as Map<String, dynamic>? ?? {});
+  factory ServerMessage.fromJson(Map<String, dynamic> json) => ServerMessage(
+      json['type'] as String, json['payload'] as Map<String, dynamic>? ?? {});
 }
 
 /// 连接被服务端拒绝的详细信息
@@ -91,20 +91,20 @@ class EphemClient {
         final msg = e.toString();
         // 尝试从错误消息里识别常见错误码
         if (msg.contains('403') || msg.contains('room_full')) {
-          _messageController.addError(
-              ConnectRejectedException(403, 'room_full', '房间人数已满'));
+          _messageController
+              .addError(ConnectRejectedException(403, 'room_full', '房间人数已满'));
         } else if (msg.contains('404') || msg.contains('room_not_found')) {
           _messageController.addError(
               ConnectRejectedException(404, 'room_not_found', '房间不存在或已销毁'));
         } else if (msg.contains('410') || msg.contains('room_expired')) {
-          _messageController.addError(
-              ConnectRejectedException(410, 'room_expired', '房间已过期'));
+          _messageController
+              .addError(ConnectRejectedException(410, 'room_expired', '房间已过期'));
         } else if (msg.contains('429') || msg.contains('rate_limited')) {
           _messageController.addError(
               ConnectRejectedException(429, 'rate_limited', '连接过于频繁，请稍后再试'));
         } else {
-          _messageController.addError(
-              ConnectRejectedException(0, 'unknown', msg));
+          _messageController
+              .addError(ConnectRejectedException(0, 'unknown', msg));
         }
       },
       onDone: () {

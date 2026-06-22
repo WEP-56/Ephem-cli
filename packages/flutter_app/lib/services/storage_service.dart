@@ -14,7 +14,8 @@ class StorageService {
   static const defaultServer = '';
 
   Future<String> getServer() async =>
-      (await SharedPreferences.getInstance()).getString(_kServer) ?? defaultServer;
+      (await SharedPreferences.getInstance()).getString(_kServer) ??
+      defaultServer;
   Future<void> setServer(String v) async =>
       (await SharedPreferences.getInstance()).setString(_kServer, v.trim());
 

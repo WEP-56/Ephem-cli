@@ -7,13 +7,17 @@ name: Release
 #
 # 流程：
 #   1. build-android  → 构建 3 个 APK（arm64-v8a / armeabi-v7a / x86_64）
-#   2. build-npm      → 构建 CLI → 打包 tarball + 单文件二进制（不上传 npm）
-#   3. release        → 等前两个都成功 → 创建 GitHub Release，附上全部产物
+#   2. build-windows  → 构建 Windows 桌面端 zip
+#   3. build-macos    → 构建 macOS 桌面端 zip
+#   4. build-npm      → 构建 CLI → 打包 tarball + 单文件二进制（不上传 npm）
+#   5. release        → 等构建都成功 → 创建 GitHub Release，附上全部产物
 #
 # 最终 Release 包含：
 #   - ephem-{version}-arm64-v8a.apk
 #   - ephem-{version}-armeabi-v7a.apk
 #   - ephem-{version}-x86_64.apk
+#   - ephem-{version}-windows.zip
+#   - ephem-{version}-macos.zip
 #   - ephem-cli-{version}.tgz        （npm 包，可 npm i -g 离线安装；
 #                                      维护者本地 npm publish 上传到 registry）
 #   - ephem-cli-{version}.js          （单文件，node 直接跑，无需 npm）
@@ -87,7 +91,80 @@ jobs:
             packages/flutter_app/build/app/outputs/flutter-apk/ephem-*.apk
           retention-days: 30
 
-  # ── Job 2: 构建 CLI 并打包（不上传到 npm registry）────────
+  # ── Job 2: 构建 Windows 桌面端 ─────────────────────────────
+  build-windows:
+    name: Build Windows
+    runs-on: windows-latest
+    env:
+      PUB_CACHE: ${{ github.workspace }}\.pub-cache
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Download dependencies
+        working-directory: packages/flutter_app
+        run: flutter pub get
+
+      - name: Build Windows
+        working-directory: packages/flutter_app
+        run: flutter build windows --release
+
+      - name: Package Windows
+        shell: pwsh
+        run: |
+          $version = "${env:GITHUB_REF_NAME}".TrimStart("v")
+          Compress-Archive -Path "packages/flutter_app/build/windows/x64/runner/Release/*" -DestinationPath "ephem-$version-windows.zip"
+
+      - name: Upload Windows artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-app
+          path: ephem-*-windows.zip
+          retention-days: 30
+
+  # ── Job 3: 构建 macOS 桌面端 ───────────────────────────────
+  build-macos:
+    name: Build macOS
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Download dependencies
+        working-directory: packages/flutter_app
+        run: flutter pub get
+
+      - name: Build macOS
+        working-directory: packages/flutter_app
+        run: flutter build macos --release
+
+      - name: Package macOS
+        run: |
+          VERSION=${GITHUB_REF_NAME#v}
+          ditto -c -k --sequesterRsrc --keepParent \
+            packages/flutter_app/build/macos/Build/Products/Release/ephem_flutter.app \
+            "ephem-${VERSION}-macos.zip"
+
+      - name: Upload macOS artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-app
+          path: ephem-*-macos.zip
+          retention-days: 30
+
+  # ── Job 4: 构建 CLI 并打包（不上传到 npm registry）────────
   # 设计取舍：npm 上传由用户在本地手动执行 `npm publish`，
   # CI 只负责产出 tgz + 单文件 js 附到 Release。
   # 这样避免了 2FA / token 类型的麻烦，发布更可控。
@@ -152,10 +229,10 @@ jobs:
             ephem-cli-*.js
           retention-days: 30
 
-  # ── Job 3: 创建 GitHub Release（等前两个都成功）──────────
+  # ── Job 5: 创建 GitHub Release（等前面构建都成功）────────
   release:
     name: Create GitHub Release
-    needs: [build-android, build-npm]
+    needs: [build-android, build-windows, build-macos, build-npm]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/')
     permissions:
@@ -193,6 +270,12 @@ jobs:
             | `ephem-${{ github.ref_name }}-arm64-v8a.apk` | 64 位 ARM | 绝大多数现代手机 |
             | `ephem-${{ github.ref_name }}-armeabi-v7a.apk` | 32 位 ARM | 旧款手机 |
             | `ephem-${{ github.ref_name }}-x86_64.apk` | 64 位 x86 | 模拟器 |
+
+            ### 桌面客户端
+            | 文件 | 适用平台 |
+            |------|----------|
+            | `ephem-*-windows.zip` | Windows x64 |
+            | `ephem-*-macos.zip` | macOS |
 
             ### 命令行客户端
             | 文件 | 说明 |

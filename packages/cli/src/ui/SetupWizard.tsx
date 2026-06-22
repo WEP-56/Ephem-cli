@@ -21,6 +21,7 @@ export function SetupWizard({ defaults, onComplete }: Props) {
   const [server, setServer] = useState(defaults.server ?? "");
   const [room, setRoom] = useState((defaults.room ?? "").toLowerCase());
   const [username, setUsername] = useState(defaults.username ?? "");
+  const [error, setError] = useState<string | null>(null);
 
   const values = [server, room, username];
   const setters = [setServer, setRoom, setUsername];
@@ -28,8 +29,13 @@ export function SetupWizard({ defaults, onComplete }: Props) {
   function submit(value: string) {
     const v = value.trim();
     setters[step](v);
+    setError(null);
     if (step === 0 && !v) {
-      // 后端地址为空时拒绝（除非有默认值）
+      setError("请输入后端地址，例如 wss://your-worker.workers.dev");
+      return;
+    }
+    if (step === 1 && !/^[a-z]+-[a-z]+-[a-z]+$/.test(v.toLowerCase())) {
+      setError("房间码格式应为三段英文单词，例如 correct-horse-battery");
       return;
     }
     if (step < 2) {
@@ -44,21 +50,24 @@ export function SetupWizard({ defaults, onComplete }: Props) {
   };
 
   return (
-    <Box flexDirection="column" gap={1}>
+    <Box flexDirection="column" gap={1} borderStyle="round" borderColor="cyan" paddingX={1} paddingY={1}>
       <Box flexDirection="column">
-        <Text color="cyan" bold>
-          ephem · 临时加密聊天室
+        <Text>
+          <Text color="cyan" bold>
+            ephem
+          </Text>
+          <Text color="gray"> · 临时加密聊天室</Text>
         </Text>
-        <Text color="gray">按回车进入下一步，Ctrl+C 退出</Text>
+        <Text color="gray">按回车进入下一步，Ctrl+C 退出。房间码和密钥不会落盘。</Text>
       </Box>
 
       {STEPS.map((label, i) => {
         const done = i < step;
         const active = i === step;
         return (
-          <Box key={label} flexDirection="column">
-            <Text color={active ? "cyan" : "gray"}>
-              {done ? "✓" : active ? "?" : "·"} {label}
+          <Box key={label} flexDirection="column" marginTop={i === 0 ? 1 : 0}>
+            <Text color={active ? "cyan" : done ? "green" : "gray"}>
+              {done ? "✓" : active ? "›" : "·"} {label}
               {i === 0 && defaults.server ? "（回车使用默认值）" : ""}
             </Text>
             {active ? (
@@ -72,11 +81,21 @@ export function SetupWizard({ defaults, onComplete }: Props) {
                 />
               </Box>
             ) : done ? (
-              <Text color="gray">  {values[i] || "(空)"}</Text>
+              <Text color="gray">  {i === 2 && !values[i] ? "匿名" : values[i] || "(空)"}</Text>
             ) : null}
           </Box>
         );
       })}
+
+      {error ? (
+        <Box marginTop={1}>
+          <Text color="red">错误：{error}</Text>
+        </Box>
+      ) : (
+        <Box marginTop={1}>
+          <Text color="gray">提示：进入聊天后可用 /image &lt;路径&gt; 发送小于 1 MiB 的图片。</Text>
+        </Box>
+      )}
     </Box>
   );
 }

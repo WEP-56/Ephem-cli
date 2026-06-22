@@ -35,6 +35,8 @@ const HARD_MAX_MEMBERS = 32;
 const MAX_USERNAME_LEN = 32;
 /** 房间全员断开后，宽限多久再自毁（避免网络抖动误判）。 */
 const EMPTY_GRACE_MS = 5 * 60 * 1000;
+/** 单条客户端 JSON 文本帧上限。图片首版内联传输，限制可避免异常大帧压垮 DO。 */
+const MAX_CLIENT_FRAME_BYTES = 2 * 1024 * 1024;
 
 /** 服务端 → 客户端 消息类型 */
 type ServerMessage =
@@ -187,8 +189,23 @@ export class RoomObject implements DurableObject {
   // ─── 消息处理：原样转发密文 ───────────────────────────────────
   private onMessage(ws: WebSocket, event: MessageEvent) {
     let msg: { type?: string; payload?: { ciphertext?: string; nonce?: string } };
+    const raw = event.data;
+    if (typeof raw !== "string") {
+      this.send(ws, {
+        type: "error",
+        payload: { code: "bad_message", message: "只支持 JSON 文本帧" },
+      });
+      return;
+    }
+    if (raw.length > MAX_CLIENT_FRAME_BYTES) {
+      this.send(ws, {
+        type: "error",
+        payload: { code: "message_too_large", message: "消息过大" },
+      });
+      return;
+    }
     try {
-      msg = JSON.parse(event.data as string);
+      msg = JSON.parse(raw);
     } catch {
       this.send(ws, {
         type: "error",

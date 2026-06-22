@@ -49,6 +49,15 @@ ephem --server wss://your-worker.workers.dev --room correct-horse-battery --user
 
 **安全提示**：通过 `--room` 传入的房间码可能被记录到 shell 历史。建议优先交互式输入。
 
+进入聊天后支持文本和小图：
+
+```bash
+# CLI/TUI 内输入
+/image C:\Users\me\Pictures\photo.jpg
+```
+
+图片会先在本地加密，再通过后端转发；后端仍然看不到图片内容。CLI 收到图片时默认只显示摘要，不自动保存到磁盘。
+
 ## 架构
 
 ```
@@ -93,6 +102,12 @@ npx wrangler deploy         # 一键部署
 部署成功后拿到 `https://ephem-backend.<subdomain>.workers.dev` 地址，
 CLI 用 `--server wss://...` 连接即可。
 
+Web 聊天端随 Worker 静态资源一起部署：
+
+```text
+https://ephem-backend.<subdomain>.workers.dev/chat
+```
+
 ### Hugging Face Spaces（备选）
 
 详见 [DEPLOY.md](./DEPLOY.md) 的备选方案章节。
@@ -101,11 +116,13 @@ CLI 用 `--server wss://...` 连接即可。
 
 后端是标准 HTTP + WebSocket 接口，任何平台都能对接。完整协议规范见 **[API.md](./API.md)**：
 
-- [Flutter / Android / iOS](./API.md#8-flutter-客户端实现指引)（含 Dart 加密示例代码）
-- Web 浏览器（已计划）
+- [Flutter / Android / Windows / macOS](./API.md#8-flutter-客户端实现指引)（含 Dart 加密示例代码）
+- Web 浏览器：`https://<后端地址>/chat`（已纳入强化计划）
 - 桌面应用
 
 加房间码 → 派生密钥 → WSS 连接 → 收发密文，按文档走就能和官方 `ephem-cli` 互通。
+
+下一阶段强化更新（Web 聊天端、图片发送、Flutter Windows/macOS 桌面端、TUI 美化）见 [ENHANCEMENT_PLAN.md](./ENHANCEMENT_PLAN.md)。
 
 ## npm 发布
 
@@ -155,7 +172,7 @@ ephem/
 | 加密 | Node 内置 `crypto` (HKDF-SHA256 + AES-256-GCM) |
 | WebSocket | `ws` 库 |
 | 参数解析 | `commander` |
-| 移动端 | [Flutter](https://flutter.dev/) (Android/iOS) |
+| 客户端 | [Flutter](https://flutter.dev/) (Android/Windows/macOS) |
 | 后端运行时 | [Cloudflare Workers](https://workers.cloudflare.com/) |
 | 有状态存储 | [Durable Objects](https://developers.cloudflare.com/durable-objects/) |
 | 构建 | [tsup](https://tsup.egoist.dev/) |
