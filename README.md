@@ -54,9 +54,21 @@ ephem --server wss://your-worker.workers.dev --room correct-horse-battery --user
 ```bash
 # CLI/TUI 内输入
 /image C:\Users\me\Pictures\photo.jpg
+/setting
+/admin
 ```
 
 图片会先在本地加密，再通过后端转发；后端仍然看不到图片内容。CLI 收到图片时默认只显示摘要，不自动保存到磁盘。
+
+CLI 会记住上次使用的后端地址和用户名，下次启动时自动预填；房间码和密钥不会落盘。聊天界面右上角有命令提示卡片：
+
+| 命令 | 说明 |
+|------|------|
+| `/image <路径>` | 发送小于 1 MiB 的图片 |
+| `/setting` | 管理本地记录的后端地址、用户名、代理和房间记录 |
+| `/admin` | 输入后端地址和管理员密码后创建/查询/销毁房间 |
+| `/clear` | 清屏 |
+| `/quit` | 退出 |
 
 ## 架构
 
@@ -102,11 +114,13 @@ npx wrangler deploy         # 一键部署
 部署成功后拿到 `https://ephem-backend.<subdomain>.workers.dev` 地址，
 CLI 用 `--server wss://...` 连接即可。
 
-Web 聊天端随 Worker 静态资源一起部署：
+Web 聊天端和 Web 管理端随 Worker 静态资源一起部署：
 
 ```text
 https://ephem-backend.<subdomain>.workers.dev/chat
 ```
+
+Flutter 客户端（Android/Windows/macOS）内置底部导航：连接、管理、设置。管理页复用同一套 `X-Admin-Key` Admin API，可以在客户端内创建房间、刷新本机记录的房间状态、手动销毁房间。Android 聊天页会在连接期间启动前台服务，降低切到后台后 WebSocket 被系统断开的概率。
 
 ### Hugging Face Spaces（备选）
 
@@ -117,12 +131,12 @@ https://ephem-backend.<subdomain>.workers.dev/chat
 后端是标准 HTTP + WebSocket 接口，任何平台都能对接。完整协议规范见 **[API.md](./API.md)**：
 
 - [Flutter / Android / Windows / macOS](./API.md#8-flutter-客户端实现指引)（含 Dart 加密示例代码）
-- Web 浏览器：`https://<后端地址>/chat`（已纳入强化计划）
+- Web 浏览器：`https://<后端地址>/chat`
 - 桌面应用
 
 加房间码 → 派生密钥 → WSS 连接 → 收发密文，按文档走就能和官方 `ephem-cli` 互通。
 
-下一阶段强化更新（Web 聊天端、图片发送、Flutter Windows/macOS 桌面端、TUI 美化）见 [ENHANCEMENT_PLAN.md](./ENHANCEMENT_PLAN.md)。
+强化更新规格和取舍记录见 [ENHANCEMENT_PLAN.md](./ENHANCEMENT_PLAN.md)。
 
 ## npm 发布
 

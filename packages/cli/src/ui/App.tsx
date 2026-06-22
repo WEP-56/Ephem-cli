@@ -3,17 +3,20 @@ import { Box, Text, useApp, useInput } from "ink";
 import { SetupWizard, type ConnectConfig } from "./SetupWizard.js";
 import { ChatRoom } from "./ChatRoom.js";
 import { RoomClient, type JoinedInfo } from "../ws/client.js";
+import { type AppConfig, saveConfig } from "../config.js";
 
 interface Props {
   defaults: { server?: string; room?: string; username?: string };
+  initialConfig: AppConfig;
 }
 
 type Phase = "setup" | "connecting" | "chat" | "error";
 
-export function App({ defaults }: Props) {
+export function App({ defaults, initialConfig }: Props) {
   const { exit } = useApp();
   const skipSetup = Boolean(defaults.server && defaults.room && defaults.username);
   const [phase, setPhase] = useState<Phase>(skipSetup ? "connecting" : "setup");
+  const [appConfig, setAppConfig] = useState<AppConfig>(initialConfig);
   const [client, setClient] = useState<RoomClient | null>(null);
   const [joined, setJoined] = useState<JoinedInfo | null>(null);
   const [error, setError] = useState<{ code: string; message: string } | null>(null);
@@ -23,9 +26,20 @@ export function App({ defaults }: Props) {
       : null,
   );
 
+  const updateConfig = useCallback((next: AppConfig) => {
+    setAppConfig(next);
+    void saveConfig(next);
+  }, []);
+
   const connect = useCallback((config: ConnectConfig) => {
     cfgRef.current = config;
-    const c = new RoomClient(config.server, config.room, config.username);
+    const nextConfig = {
+      ...appConfig,
+      server: config.server,
+      username: config.username,
+    };
+    updateConfig(nextConfig);
+    const c = new RoomClient(config.server, config.room, config.username, nextConfig.proxy);
     setClient(c);
     setPhase("connecting");
     setError(null);
@@ -44,7 +58,7 @@ export function App({ defaults }: Props) {
       setPhase((p) => (p === "connecting" ? "error" : p));
     });
     c.connect();
-  }, []);
+  }, [appConfig, updateConfig]);
 
   // 命令行参数齐全时直接连接
   useEffect(() => {
@@ -93,9 +107,12 @@ export function App({ defaults }: Props) {
   return (
     <ChatRoom
       client={client}
+      server={cfgRef.current.server}
       roomCode={cfgRef.current.room}
       username={cfgRef.current.username}
       joined={joined}
+      appConfig={appConfig}
+      onConfigChange={updateConfig}
       onExit={() => exit()}
     />
   );

@@ -4,6 +4,7 @@ import React from "react";
 import { render } from "ink";
 import { Command } from "commander";
 import { App } from "./ui/App.js";
+import { loadConfig } from "./config.js";
 
 const program = new Command();
 
@@ -14,11 +15,12 @@ program
   .option("-r, --room <code>", "房间码，例如 correct-horse-battery")
   .option("-u, --username <name>", "用户名")
   .helpOption("-h, --help", "查看帮助")
-  .action((opts) => {
+  .action(async (opts) => {
+    const saved = await loadConfig();
     const defaults = {
-      server: opts.server ?? process.env.EPHEM_SERVER,
+      server: opts.server ?? process.env.EPHEM_SERVER ?? saved.server,
       room: opts.room,
-      username: opts.username,
+      username: opts.username ?? saved.username,
     };
 
     // 安全提醒：命令行参数传房间码会被记录到 shell history，优先用交互式输入。
@@ -28,7 +30,7 @@ program
       );
     }
 
-    const instance = render(React.createElement(App, { defaults }));
+    const instance = render(React.createElement(App, { defaults, initialConfig: saved }));
     instance.waitUntilExit()
       .then(() => process.exit(0))
       .catch(() => process.exit(1));

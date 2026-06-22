@@ -2,7 +2,9 @@
 // 服务端主动拒绝（房间不存在/已满/过期）时不重连，交由 UI 处理。
 
 import { EventEmitter } from "node:events";
+import { HttpsProxyAgent } from "https-proxy-agent";
 import WebSocket from "ws";
+import type { ProxyConfig } from "../config.js";
 
 export interface JoinedInfo {
   username: string;
@@ -48,6 +50,7 @@ export class RoomClient extends EventEmitter {
     private readonly server: string,
     private readonly roomCode: string,
     private readonly username: string,
+    private readonly proxy?: ProxyConfig,
   ) {
     super();
   }
@@ -60,7 +63,8 @@ export class RoomClient extends EventEmitter {
 
   private openSocket(): void {
     const url = `${normalizeWs(this.server)}/room/${encodeURIComponent(this.roomCode)}?username=${encodeURIComponent(this.username)}`;
-    const ws = new WebSocket(url);
+    const useProxy = this.proxy?.enabled && this.proxy.url && url.startsWith("wss://");
+    const ws = new WebSocket(url, useProxy ? { agent: new HttpsProxyAgent(this.proxy!.url) } : undefined);
     this.ws = ws;
 
     ws.on("open", () => {

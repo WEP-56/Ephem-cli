@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import '../protocol/ephem_message.dart';
+import '../services/background_keepalive_service.dart';
 import '../services/chat_controller.dart';
 import '../services/ephem_client.dart';
 
@@ -54,11 +55,13 @@ class _ChatPageState extends State<ChatPage> {
 
   void _onEvent(ChatEvent e) {
     if (!mounted) return;
+    var shouldStartKeepalive = false;
     setState(() {
       switch (e) {
         case JoinedEvent():
           _messages.add(_ChatLine.system('已加入房间 ${widget.roomCode} '
               '（${e.info.currentMembers}/${e.info.maxMembers} 人）'));
+          shouldStartKeepalive = true;
           _startCountdown(e.info.expiresAt);
         case PeerJoinedEvent():
           _messages.add(_ChatLine.system('${e.username} 加入了房间'));
@@ -82,6 +85,7 @@ class _ChatPageState extends State<ChatPage> {
               e.reason;
           _messages.add(_ChatLine.system('房间即将关闭：$reason'));
           Future.delayed(const Duration(milliseconds: 1500), () {
+            BackgroundKeepaliveService.stop();
             if (mounted) Navigator.of(context).pop();
           });
         case ErrorEvent():
@@ -90,6 +94,9 @@ class _ChatPageState extends State<ChatPage> {
       }
       _scrollToBottom();
     });
+    if (shouldStartKeepalive) {
+      unawaited(BackgroundKeepaliveService.start(roomCode: widget.roomCode));
+    }
   }
 
   void _startCountdown(int expiresAt) {
@@ -178,6 +185,7 @@ class _ChatPageState extends State<ChatPage> {
     _inputCtrl.dispose();
     _scrollCtrl.dispose();
     _ctrl.dispose();
+    BackgroundKeepaliveService.stop();
     super.dispose();
   }
 

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'pages/admin_page.dart';
 import 'pages/connect_page.dart';
 import 'pages/settings_page.dart';
 import 'services/storage_service.dart';
@@ -48,7 +49,12 @@ class _EphemAppState extends State<EphemApp> {
               storage: _storage,
               server: _server,
               username: _username,
-              onSettingsTap: () => setState(() => _currentIndex = 1),
+              onSettingsTap: () => setState(() => _currentIndex = 2),
+            ),
+            AdminPage(
+              storage: _storage,
+              server: _server,
+              onChanged: () => _loadSettings(),
             ),
             SettingsPage(
               storage: _storage,
@@ -64,6 +70,11 @@ class _EphemAppState extends State<EphemApp> {
               icon: Icon(Icons.chat_bubble_outline),
               selectedIcon: Icon(Icons.chat_bubble),
               label: '连接',
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.admin_panel_settings_outlined),
+              selectedIcon: Icon(Icons.admin_panel_settings),
+              label: '管理',
             ),
             NavigationDestination(
               icon: Icon(Icons.settings_outlined),

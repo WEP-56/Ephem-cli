@@ -1,7 +1,7 @@
 name: ephem_flutter
 description: Ephem 临时加密聊天室 Flutter 客户端（Android/Windows/macOS）
 publish_to: "none"
-version: 0.2.0
+version: 0.3.0
 
 environment:
   sdk: ">=3.0.0 <4.0.0"

@@ -102,6 +102,8 @@ X-Admin-Key: <ADMIN_PASSWORD>
 
 所有 `/api/*` 端点都需要 `X-Admin-Key` 头。
 
+官方 CLI 的 `/admin` 模式、Flutter 客户端的“管理”页、Web Admin 页面都复用本节 API。管理员密码只用于请求头鉴权；官方客户端不会持久化管理员密码。
+
 ### 4.1 创建房间
 
 ```
@@ -831,6 +833,8 @@ https://<后端地址>/chat
 5. 连接 `wss://<后端地址>/room/:roomCode?username=:username`
 
 Web 聊天端不使用 `X-Admin-Key`，不负责创建房间。创建/销毁房间仍由 Admin 页面和 Admin REST API 完成。
+
+官方 Flutter 客户端和 CLI 可以在客户端内进入管理页/管理模式创建房间；这不是新的后端协议，仍然调用第 4 节 Admin REST API。
 
 安全要求：
 
