@@ -4,6 +4,7 @@
 const $ = (id) => document.getElementById(id);
 const adminKeyEl = $("adminKey");
 const maxMembersEl = $("maxMembers");
+const roomTypeEl = $("roomType");
 const ttlEl = $("ttl");
 const createBtn = $("createBtn");
 const resultPanel = $("resultPanel");
@@ -20,6 +21,9 @@ const KEY_STORE = "ephem.adminKey";
 adminKeyEl.value = localStorage.getItem(KEY_STORE) ?? "";
 adminKeyEl.addEventListener("change", () => {
   localStorage.setItem(KEY_STORE, adminKeyEl.value);
+});
+roomTypeEl.addEventListener("change", () => {
+  ttlEl.disabled = roomTypeEl.value === "persistent";
 });
 
 function adminKey() { return adminKeyEl.value.trim(); }
@@ -49,6 +53,7 @@ createBtn.addEventListener("click", async () => {
   createBtn.textContent = "创建中…";
   const body = {
     maxMembers: parseInt(maxMembersEl.value, 10) || 2,
+    roomType: roomTypeEl.value === "persistent" ? "persistent" : "ephemeral",
     ttlSeconds: parseInt(ttlEl.value, 10) || 3600,
   };
   const r = await api("/api/rooms", { method: "POST", body: JSON.stringify(body) });
@@ -56,17 +61,20 @@ createBtn.addEventListener("click", async () => {
   createBtn.textContent = "创建房间";
   if (!r.ok) { toast(r.data?.error ?? `创建失败 (${r.status})`); return; }
 
-  const { roomCode, expiresAt, maxMembers } = r.data;
+  const { roomCode, expiresAt, maxMembers, roomType, ttlSeconds } = r.data;
   resultPanel.style.display = "";
   roomCodeOut.textContent = roomCode;
-  roomMetaOut.innerHTML = `人数上限 <b>${maxMembers}</b> · 销毁时间 <b>${fmtTime(expiresAt)}</b> · 剩余 <b id="cd">${fmtCountdown(expiresAt)}</b>`;
+  roomMetaOut.innerHTML = roomType === "persistent"
+    ? `长期房间 · 人数上限 <b>${maxMembers}</b> · 保存轻量文本记录`
+    : `人数上限 <b>${maxMembers}</b> · 销毁时间 <b>${fmtTime(expiresAt)}</b> · 剩余 <b id="cd">${fmtCountdown(expiresAt)}</b>`;
 
   // 记录到本地并刷新列表
   const rooms = getRooms().filter((x) => x.code !== roomCode);
-  rooms.unshift({ code: roomCode, expiresAt, maxMembers, createdAt: Date.now() });
+  rooms.unshift({ code: roomCode, expiresAt, maxMembers, ttlSeconds, roomType, createdAt: Date.now() });
   saveRooms(rooms);
   renderList();
-  startCountdown(expiresAt);
+  if (roomType === "persistent") clearInterval(cdTimer);
+  else startCountdown(expiresAt);
   toast("房间已创建");
 });
 
@@ -93,15 +101,16 @@ async function renderList() {
   const alive = items.filter((x) => x.ok && x.status?.alive !== false && x.status?.error !== "not_found");
   // 保留查询失败但本地记录未过期的（可能是网络问题），过期的清掉
   const keep = items.filter((x) => !(x.ok && (x.status?.error === "not_found" || x.status?.alive === false)));
-  saveRooms(keep.map(({ code, expiresAt, maxMembers, createdAt }) => ({ code, expiresAt, maxMembers, createdAt })));
+  saveRooms(keep.map(({ code, expiresAt, maxMembers, ttlSeconds, roomType, createdAt }) => ({ code, expiresAt, maxMembers, ttlSeconds, roomType, createdAt })));
 
   roomListEl.innerHTML = keep
     .map((x) => {
       const s = x.status ?? {};
       const live = s.alive === true;
+      const roomType = s.roomType ?? x.roomType ?? "ephemeral";
       const members = s.currentMembers ?? "—";
       const max = s.maxMembers ?? x.maxMembers ?? "—";
-      const left = live ? fmtCountdown(s.expiresAt ?? x.expiresAt) : "已销毁";
+      const left = !live ? "已销毁" : roomType === "persistent" ? `长期 · 历史 ${s.historyCount ?? 0} 条` : fmtCountdown(s.expiresAt ?? x.expiresAt);
       return `
         <div class="room-item">
           <div>

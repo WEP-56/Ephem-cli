@@ -3,9 +3,9 @@ import 'dart:typed_data';
 
 import 'package:image/image.dart' as img;
 
-const int imageMaxBytes = 1024 * 1024;
-const int imageMaxEdge = 1600;
-const int thumbMaxEdge = 360;
+const int imageMaxBytes = 5 * 1024 * 1024;
+const int imageMaxEdge = 2560;
+const int thumbMaxEdge = 640;
 
 sealed class EphemMessage {
   const EphemMessage();
@@ -37,7 +37,44 @@ class EphemImageMessage extends EphemMessage {
     this.thumb,
   });
 
+  factory EphemImageMessage.fromJson(Map<String, dynamic> json) {
+    final thumb = json['thumb'];
+    return EphemImageMessage(
+      mime: json['mime']?.toString() ?? 'image/jpeg',
+      name: json['name']?.toString(),
+      size: (json['size'] as num?)?.toInt() ?? 0,
+      width: (json['width'] as num?)?.toInt(),
+      height: (json['height'] as num?)?.toInt(),
+      data: json['data']?.toString() ?? '',
+      thumb: thumb is Map<String, dynamic>
+          ? EphemImageThumb(
+              mime: thumb['mime']?.toString() ?? 'image/jpeg',
+              width: (thumb['width'] as num?)?.toInt() ?? 0,
+              height: (thumb['height'] as num?)?.toInt() ?? 0,
+              data: thumb['data']?.toString() ?? '',
+            )
+          : null,
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        'mime': mime,
+        if (name != null) 'name': name,
+        'size': size,
+        if (width != null) 'width': width,
+        if (height != null) 'height': height,
+        'data': data,
+        if (thumb != null)
+          'thumb': {
+            'mime': thumb!.mime,
+            'width': thumb!.width,
+            'height': thumb!.height,
+            'data': thumb!.data,
+          },
+      };
+
   Uint8List previewBytes() => base64Decode(thumb?.data ?? data);
+  Uint8List fullBytes() => base64Decode(data);
   String previewMime() => thumb?.mime ?? mime;
 }
 
@@ -135,16 +172,16 @@ Future<EphemImageMessage> prepareImageMessage({
   }
 
   final resized = _resizeImage(decoded, imageMaxEdge);
-  var encoded = Uint8List.fromList(img.encodeJpg(resized, quality: 84));
+  var encoded = Uint8List.fromList(img.encodeJpg(resized, quality: 92));
   if (encoded.length > imageMaxBytes) {
-    encoded = Uint8List.fromList(img.encodeJpg(resized, quality: 72));
+    encoded = Uint8List.fromList(img.encodeJpg(resized, quality: 82));
   }
   if (encoded.length > imageMaxBytes) {
     throw FormatException('图片压缩后仍超过 ${formatBytes(imageMaxBytes)}');
   }
 
   final thumb = _resizeImage(decoded, thumbMaxEdge);
-  final thumbBytes = Uint8List.fromList(img.encodeJpg(thumb, quality: 76));
+  final thumbBytes = Uint8List.fromList(img.encodeJpg(thumb, quality: 82));
 
   return EphemImageMessage(
     mime: 'image/jpeg',

@@ -25,6 +25,7 @@ class _AdminPageState extends State<AdminPage> {
   final _maxMembersCtrl = TextEditingController(text: '2');
   final _ttlCtrl = TextEditingController(text: '3600');
   final _manualRoomCtrl = TextEditingController();
+  String _roomType = 'ephemeral';
 
   bool _busy = false;
   bool _proxyEnabled = false;
@@ -90,13 +91,15 @@ class _AdminPageState extends State<AdminPage> {
       final result = await _api().createRoom(
         maxMembers: int.tryParse(_maxMembersCtrl.text) ?? 2,
         ttlSeconds: int.tryParse(_ttlCtrl.text) ?? 3600,
+        roomType: _roomType,
       );
       final room = ManagedRoomRecord(
         code: result.roomCode,
         createdAt: DateTime.now().millisecondsSinceEpoch,
-        expiresAt: result.expiresAt,
+        expiresAt: result.expiresAt ?? 0,
         maxMembers: result.maxMembers,
         ttlSeconds: result.ttlSeconds,
+        roomType: result.roomType,
       );
       await widget.storage.rememberManagedRoom(room);
       _rooms = await widget.storage.getManagedRooms();
@@ -106,6 +109,7 @@ class _AdminPageState extends State<AdminPage> {
         currentMembers: 0,
         maxMembers: result.maxMembers,
         expiresAt: result.expiresAt,
+        roomType: result.roomType,
       );
     } on AdminApiException catch (e) {
       _error = e.message;
@@ -240,6 +244,23 @@ class _AdminPageState extends State<AdminPage> {
           const SizedBox(height: 24),
           Text('创建房间', style: Theme.of(context).textTheme.titleSmall),
           const SizedBox(height: 8),
+          SegmentedButton<String>(
+            segments: const [
+              ButtonSegment(
+                value: 'ephemeral',
+                label: Text('临时'),
+                icon: Icon(Icons.timer_outlined),
+              ),
+              ButtonSegment(
+                value: 'persistent',
+                label: Text('长期'),
+                icon: Icon(Icons.all_inclusive),
+              ),
+            ],
+            selected: {_roomType},
+            onSelectionChanged: (set) => setState(() => _roomType = set.first),
+          ),
+          const SizedBox(height: 12),
           Row(
             children: [
               Expanded(
@@ -252,17 +273,19 @@ class _AdminPageState extends State<AdminPage> {
                   ),
                 ),
               ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: TextField(
-                  controller: _ttlCtrl,
-                  keyboardType: TextInputType.number,
-                  decoration: const InputDecoration(
-                    labelText: '秒',
-                    border: OutlineInputBorder(),
+              if (_roomType != 'persistent') ...[
+                const SizedBox(width: 12),
+                Expanded(
+                  child: TextField(
+                    controller: _ttlCtrl,
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(
+                      labelText: '秒',
+                      border: OutlineInputBorder(),
+                    ),
                   ),
                 ),
-              ),
+              ],
             ],
           ),
           const SizedBox(height: 12),
@@ -322,7 +345,9 @@ class _AdminPageState extends State<AdminPage> {
           leading: const Icon(Icons.key),
           title: SelectableText(result.roomCode),
           subtitle: Text(
-            '${result.maxMembers} 人 · 剩余 ${_fmtLeft(result.expiresAt)}',
+            result.roomType == 'persistent'
+                ? '${result.maxMembers} 人 · 长期房间'
+                : '${result.maxMembers} 人 · 剩余 ${_fmtLeft(result.expiresAt ?? 0)}',
           ),
           trailing: IconButton(
             onPressed: () {
@@ -340,10 +365,15 @@ class _AdminPageState extends State<AdminPage> {
   Widget _buildRoomTile(ManagedRoomRecord room) {
     final status = _statuses[room.code];
     final alive = status?.alive == true;
+    final roomType = status?.roomType ?? room.roomType;
     final members = status == null
         ? '?/${room.maxMembers}'
         : '${status.currentMembers ?? '?'}/${status.maxMembers ?? room.maxMembers}';
-    final left = status?.expiresAt == null ? '未知' : _fmtLeft(status!.expiresAt!);
+    final left = roomType == 'persistent'
+        ? '长期 · 历史 ${status?.historyCount ?? 0} 条'
+        : status?.expiresAt == null
+            ? '未知'
+            : _fmtLeft(status!.expiresAt!);
     return Card(
       child: ListTile(
         title: SelectableText(room.code),

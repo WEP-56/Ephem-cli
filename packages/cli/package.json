@@ -1,6 +1,6 @@
 {
   "name": "ephem-cli",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "临时、端到端加密的命令行聊天室 CLI",
   "type": "module",
   "bin": {

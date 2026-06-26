@@ -116,6 +116,11 @@
       <input id="adminKey" type="password" placeholder="部署时设置的 ADMIN_PASSWORD" autocomplete="off" />
       <label>人数上限</label>
       <input id="maxMembers" type="number" min="2" max="32" value="2" />
+      <label>房间类型</label>
+      <select id="roomType">
+        <option value="ephemeral" selected>临时房间（按时间销毁）</option>
+        <option value="persistent">长期房间（保存轻量聊天记录）</option>
+      </select>
       <label>存活时长</label>
       <select id="ttl">
         <option value="900">15 分钟</option>

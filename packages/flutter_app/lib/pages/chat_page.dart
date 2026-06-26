@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import '../protocol/ephem_message.dart';
+import '../services/archive_service.dart';
 import '../services/background_keepalive_service.dart';
 import '../services/chat_controller.dart';
 import '../services/ephem_client.dart';
@@ -11,12 +12,14 @@ class ChatPage extends StatefulWidget {
   final String server;
   final String roomCode;
   final String username;
+  final String clientId;
 
   const ChatPage({
     super.key,
     required this.server,
     required this.roomCode,
     required this.username,
+    required this.clientId,
   });
 
   @override
@@ -28,9 +31,15 @@ class _ChatPageState extends State<ChatPage> {
   final _inputCtrl = TextEditingController();
   final _scrollCtrl = ScrollController();
   final _messages = <_ChatLine>[];
+  final _archiveMessages = <ArchiveMessage>[];
+  final _archiveService = ArchiveService();
   Timer? _cdTimer;
   String? _connectError;
   bool _roomClosing = false;
+  bool _historyLoading = false;
+  bool _historyHasMore = false;
+  String? _historyBefore;
+  final _seenHistoryIds = <String>{};
 
   @override
   void initState() {
@@ -39,9 +48,11 @@ class _ChatPageState extends State<ChatPage> {
       server: widget.server,
       roomCode: widget.roomCode,
       username: widget.username,
+      clientId: widget.clientId,
     );
 
     _ctrl.events.listen(_onEvent);
+    _scrollCtrl.addListener(_onScroll);
     _startConnection();
   }
 
@@ -56,23 +67,55 @@ class _ChatPageState extends State<ChatPage> {
   void _onEvent(ChatEvent e) {
     if (!mounted) return;
     var shouldStartKeepalive = false;
+    var prependedHistory = false;
+    final oldMaxScroll =
+        _scrollCtrl.hasClients ? _scrollCtrl.position.maxScrollExtent : 0.0;
     setState(() {
       switch (e) {
         case JoinedEvent():
           _messages.add(_ChatLine.system('已加入房间 ${widget.roomCode} '
               '（${e.info.currentMembers}/${e.info.maxMembers} 人）'));
           shouldStartKeepalive = true;
-          _startCountdown(e.info.expiresAt);
+          if (e.info.expiresAt != null) _startCountdown(e.info.expiresAt!);
         case PeerJoinedEvent():
           _messages.add(_ChatLine.system('${e.username} 加入了房间'));
         case PeerLeftEvent():
           _messages.add(_ChatLine.system('${e.username} 离开了房间'));
         case MessageEvent():
-          _messages
-              .add(_ChatLine.msg(e.from, e.text, e.from == widget.username));
+          if (e.historical) {
+            if (e.historyId != null && !_seenHistoryIds.add(e.historyId!)) {
+              break;
+            }
+            _messages.insert(
+                0, _ChatLine.msg(e.from, e.text, e.from == widget.username));
+            prependedHistory = true;
+          } else {
+            _messages
+                .add(_ChatLine.msg(e.from, e.text, e.from == widget.username));
+          }
+          if (!e.historical) {
+            _archiveMessages.add(ArchiveMessage.text(
+              from: e.from,
+              text: e.text,
+              mine: e.from == widget.username,
+              timestamp: e.timestamp,
+            ));
+          }
         case ImageMessageEvent():
           _messages
               .add(_ChatLine.image(e.from, e.image, e.from == widget.username));
+          if (!e.historical) {
+            _archiveMessages.add(ArchiveMessage.image(
+              from: e.from,
+              image: e.image,
+              mine: e.from == widget.username,
+              timestamp: e.timestamp,
+            ));
+          }
+        case HistoryPageEvent():
+          _historyHasMore = e.hasMore;
+          _historyBefore = e.before;
+          _historyLoading = false;
         case DecryptFailedEvent():
           _messages.add(_ChatLine.system('收到来自 ${e.from} 的无法解密的消息'));
         case RoomClosingEvent():
@@ -92,8 +135,9 @@ class _ChatPageState extends State<ChatPage> {
           _connectError = e.message.isEmpty ? e.code : e.message;
           _messages.add(_ChatLine.system('错误：$_connectError'));
       }
-      _scrollToBottom();
+      if (!prependedHistory) _scrollToBottom();
     });
+    if (prependedHistory) _restoreScrollAfterPrepend(oldMaxScroll);
     if (shouldStartKeepalive) {
       unawaited(BackgroundKeepaliveService.start(roomCode: widget.roomCode));
     }
@@ -125,6 +169,24 @@ class _ChatPageState extends State<ChatPage> {
     });
   }
 
+  void _restoreScrollAfterPrepend(double oldMaxScroll) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!_scrollCtrl.hasClients) return;
+      final delta = _scrollCtrl.position.maxScrollExtent - oldMaxScroll;
+      if (delta > 0) {
+        _scrollCtrl.jumpTo((_scrollCtrl.offset + delta).clamp(
+          _scrollCtrl.position.minScrollExtent,
+          _scrollCtrl.position.maxScrollExtent,
+        ));
+      }
+    });
+  }
+
+  void _onScroll() {
+    if (!_scrollCtrl.hasClients) return;
+    if (_scrollCtrl.offset < 160) _loadOlderHistory();
+  }
+
   Future<void> _send() async {
     final text = _inputCtrl.text.trim();
     if (text.isEmpty || _roomClosing) return;
@@ -132,6 +194,12 @@ class _ChatPageState extends State<ChatPage> {
     if (ok) {
       setState(() {
         _messages.add(_ChatLine.msg(widget.username, text, true));
+        _archiveMessages.add(ArchiveMessage.text(
+          from: widget.username,
+          text: text,
+          mine: true,
+          timestamp: DateTime.now().millisecondsSinceEpoch,
+        ));
         _inputCtrl.clear();
         _scrollToBottom();
       });
@@ -164,6 +232,12 @@ class _ChatPageState extends State<ChatPage> {
       if (ok) {
         setState(() {
           _messages.add(_ChatLine.image(widget.username, image, true));
+          _archiveMessages.add(ArchiveMessage.image(
+            from: widget.username,
+            image: image,
+            mine: true,
+            timestamp: DateTime.now().millisecondsSinceEpoch,
+          ));
           _scrollToBottom();
         });
       } else {
@@ -175,6 +249,40 @@ class _ChatPageState extends State<ChatPage> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('发送图片失败：$e')),
+      );
+    }
+  }
+
+  void _loadOlderHistory() {
+    if (_historyLoading || !_historyHasMore) return;
+    setState(() => _historyLoading = true);
+    _ctrl.requestHistory(before: _historyBefore, limit: 50);
+  }
+
+  Future<void> _exportArchive() async {
+    if (_archiveMessages.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('当前没有可导出的聊天记录')),
+      );
+      return;
+    }
+    final archive = EphemArchive(
+      title:
+          '${widget.roomCode} ${DateTime.now().toLocal().toIso8601String()}',
+      roomCode: widget.roomCode,
+      exportedAt: DateTime.now().millisecondsSinceEpoch,
+      messages: List.of(_archiveMessages),
+    );
+    try {
+      await _archiveService.exportArchive(archive);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('记录已导出')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('导出失败：$e')),
       );
     }
   }
@@ -217,11 +325,11 @@ class _ChatPageState extends State<ChatPage> {
     }
 
     final info = _ctrl.info;
-    final remaining = info == null
+    final remaining = info == null || info.expiresAt == null
         ? null
         : Duration(
             milliseconds:
-                info.expiresAt - DateTime.now().millisecondsSinceEpoch);
+                info.expiresAt! - DateTime.now().millisecondsSinceEpoch);
 
     return Scaffold(
       appBar: AppBar(
@@ -232,11 +340,18 @@ class _ChatPageState extends State<ChatPage> {
             if (info != null)
               Text(
                 '${info.currentMembers}/${info.maxMembers} 人'
-                '${remaining != null && remaining.inSeconds > 0 ? '  ·  剩余 ${_fmtDuration(remaining)}' : ''}',
+                '${info.roomType == 'persistent' ? '  ·  长期' : remaining != null && remaining.inSeconds > 0 ? '  ·  剩余 ${_fmtDuration(remaining)}' : ''}',
                 style: const TextStyle(fontSize: 12, color: Colors.grey),
               ),
           ],
         ),
+        actions: [
+          IconButton(
+            onPressed: _exportArchive,
+            icon: const Icon(Icons.archive_outlined),
+            tooltip: '导出 .ephem',
+          ),
+        ],
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
           onPressed: () => Navigator.of(context).pop(),
@@ -249,8 +364,26 @@ class _ChatPageState extends State<ChatPage> {
             child: ListView.builder(
               controller: _scrollCtrl,
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              itemCount: _messages.length,
-              itemBuilder: (_, i) => _buildLine(_messages[i]),
+              itemCount: _messages.length + (_historyHasMore ? 1 : 0),
+              itemBuilder: (_, i) {
+                if (_historyHasMore && i == 0) {
+                  return Center(
+                    child: TextButton.icon(
+                      onPressed: _historyLoading ? null : _loadOlderHistory,
+                      icon: _historyLoading
+                          ? const SizedBox(
+                              width: 14,
+                              height: 14,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.expand_less),
+                      label: Text(_historyLoading ? '加载中…' : '加载更早记录'),
+                    ),
+                  );
+                }
+                final offset = _historyHasMore ? 1 : 0;
+                return _buildLine(_messages[i - offset]);
+              },
             ),
           ),
           // 输入栏
@@ -404,10 +537,13 @@ class _ChatPageState extends State<ChatPage> {
                     ),
                   ClipRRect(
                     borderRadius: BorderRadius.circular(8),
-                    child: Image.memory(
-                      preview,
-                      fit: BoxFit.cover,
-                      gaplessPlayback: true,
+                    child: InkWell(
+                      onTap: () => _showImage(image),
+                      child: Image.memory(
+                        preview,
+                        fit: BoxFit.cover,
+                        gaplessPlayback: true,
+                      ),
                     ),
                   ),
                   const SizedBox(height: 6),
@@ -420,6 +556,27 @@ class _ChatPageState extends State<ChatPage> {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  void _showImage(EphemImageMessage image) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => Scaffold(
+          appBar: AppBar(title: Text(image.name ?? '图片')),
+          backgroundColor: Colors.black,
+          body: Center(
+            child: InteractiveViewer(
+              minScale: 0.5,
+              maxScale: 5,
+              child: Image.memory(
+                image.fullBytes(),
+                fit: BoxFit.contain,
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }

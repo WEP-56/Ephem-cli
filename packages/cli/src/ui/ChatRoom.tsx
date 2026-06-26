@@ -56,7 +56,9 @@ export function ChatRoom({ client, server, roomCode, username, joined, appConfig
   const [members, setMembers] = useState(joined.currentMembers);
   const [maxMembers] = useState(joined.maxMembers);
   const [expiresAt] = useState(joined.expiresAt);
-  const [remaining, setRemaining] = useState(() => Math.max(0, Math.floor((joined.expiresAt - Date.now()) / 1000)));
+  const [remaining, setRemaining] = useState(() =>
+    joined.expiresAt === null ? Number.POSITIVE_INFINITY : Math.max(0, Math.floor((joined.expiresAt - Date.now()) / 1000)),
+  );
   const [closing, setClosing] = useState<string | null>(null);
   const [status, setStatus] = useState<"online" | "reconnecting" | "closing">("online");
   const [statusText, setStatusText] = useState("已连接");
@@ -147,6 +149,7 @@ export function ChatRoom({ client, server, roomCode, username, joined, appConfig
   // 倒计时
   useEffect(() => {
     const t = setInterval(() => {
+      if (expiresAt === null) return;
       const r = Math.max(0, Math.floor((expiresAt - Date.now()) / 1000));
       setRemaining(r);
     }, 1000);
@@ -357,7 +360,7 @@ export function ChatRoom({ client, server, roomCode, username, joined, appConfig
         const room: ManagedRoomRecord = {
           code: res.data.roomCode,
           createdAt: Date.now(),
-          expiresAt: res.data.expiresAt,
+          expiresAt: res.data.expiresAt ?? 0,
           maxMembers: res.data.maxMembers,
           ttlSeconds: res.data.ttlSeconds,
         };
@@ -502,7 +505,7 @@ export function ChatRoom({ client, server, roomCode, username, joined, appConfig
           <Box flexGrow={1} />
           <Text color={statusColor}>{statusText}</Text>
           <Text color="gray">  </Text>
-          <Text color={cdColor}>⏳ {fmtCd(remaining)}</Text>
+          <Text color={cdColor}>{expiresAt === null ? "长期" : `⏳ ${fmtCd(remaining)}`}</Text>
         </Box>
       </Box>
       <Text color="gray">

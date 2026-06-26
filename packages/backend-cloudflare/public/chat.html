@@ -44,11 +44,14 @@
         </div>
         <div class="header-actions">
           <span id="connState" class="conn-state">连接中</span>
+          <button id="exportBtn" class="ghost-btn" type="button" title="导出聊天记录">导出</button>
           <button id="leaveBtn" class="ghost-btn" type="button" title="离开房间">离开</button>
         </div>
       </header>
 
-      <div id="messageList" class="message-list" aria-live="polite"></div>
+      <div id="messageList" class="message-list" aria-live="polite">
+        <button id="loadHistoryBtn" class="ghost-btn load-history" type="button" hidden>加载更早记录</button>
+      </div>
 
       <form id="messageForm" class="composer">
         <input id="imageInput" type="file" accept="image/*" hidden />
@@ -57,7 +60,34 @@
         <button id="sendBtn" type="submit">发送</button>
       </form>
     </section>
+
+    <section id="archiveView" class="chat-view" hidden>
+      <header class="chat-header">
+        <div>
+          <div class="room-title">记录</div>
+          <div class="room-meta">导入或查看本地 .ephem 聊天记录</div>
+        </div>
+        <div class="header-actions">
+          <input id="archiveImportInput" type="file" accept=".ephem,application/octet-stream,application/gzip" hidden />
+          <button id="archiveImportBtn" class="ghost-btn" type="button">导入</button>
+          <button id="archiveBackBtn" class="ghost-btn" type="button">返回</button>
+        </div>
+      </header>
+      <div id="archiveList" class="message-list"></div>
+      <div id="archiveViewer" class="message-list" hidden></div>
+    </section>
+
+    <nav class="bottom-tabs">
+      <button id="chatTab" class="tab active" type="button">聊天</button>
+      <button id="archiveTab" class="tab" type="button">记录</button>
+    </nav>
   </main>
+
+  <div id="imageLightbox" class="lightbox" hidden>
+    <button id="lightboxClose" type="button" aria-label="关闭">×</button>
+    <img id="lightboxImage" alt="" />
+    <div id="lightboxMeta"></div>
+  </div>
 
   <script src="/chat.js"></script>
 </body>

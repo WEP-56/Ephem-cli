@@ -10,9 +10,10 @@ export interface CreateRoomRequest {
 
 export interface CreateRoomResponse {
   roomCode: string;
-  expiresAt: number;
+  expiresAt: number | null;
   maxMembers: number;
   ttlSeconds: number;
+  roomType: "ephemeral" | "persistent";
 }
 
 export interface RoomStatusResponse {
@@ -21,6 +22,8 @@ export interface RoomStatusResponse {
   maxMembers?: number;
   createdAt?: number;
   expiresAt?: number;
+  roomType?: "ephemeral" | "persistent";
+  historyCount?: number;
   error?: string;
 }
 

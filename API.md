@@ -123,6 +123,7 @@ X-Admin-Key: <ADMIN_PASSWORD>
 |------|------|------|------|----------|------|
 | `maxMembers` | number | 否 | 2 | 2 ~ 32 | 房间人数上限 |
 | `ttlSeconds` | number | 否 | 3600 | 60 ~ 86400 | 房间存活时长（秒） |
+| `roomType` | string | 否 | `ephemeral` | `ephemeral` / `persistent` | 临时房或长期房 |
 
 **请求示例**
 
@@ -140,7 +141,8 @@ curl -X POST https://ephem-backend.xxx.workers.dev/api/rooms \
   "roomCode": "correct-horse-battery",
   "expiresAt": 1782045811151,
   "maxMembers": 2,
-  "ttlSeconds": 3600
+  "ttlSeconds": 3600,
+  "roomType": "ephemeral"
 }
 ```
 
@@ -150,6 +152,9 @@ curl -X POST https://ephem-backend.xxx.workers.dev/api/rooms \
 | `expiresAt` | number | 销毁时间戳（毫秒，UTC） |
 | `maxMembers` | number | 实际生效的房间人数上限（可能被 clamp） |
 | `ttlSeconds` | number | 实际生效的存活时长（可能被 clamp） |
+| `roomType` | string | `persistent` 长期房的 `expiresAt` 为 `null`，`ttlSeconds` 为 `0` |
+
+长期房不会因无人在线而销毁，会保存客户端标记为 `persist: true` 的轻量密文文本历史。后端仍不保存明文，图片消息不进入长期历史。
 
 **错误响应**
 
@@ -181,10 +186,12 @@ curl https://ephem-backend.xxx.workers.dev/api/rooms/correct-horse-battery/statu
 ```json
 {
   "alive": true,
+  "roomType": "persistent",
   "currentMembers": 2,
   "maxMembers": 2,
   "createdAt": 1782042211151,
-  "expiresAt": 1782045811151
+  "expiresAt": null,
+  "historyCount": 42
 }
 ```
 
@@ -195,6 +202,8 @@ curl https://ephem-backend.xxx.workers.dev/api/rooms/correct-horse-battery/statu
 | `maxMembers` | number | 人数上限 |
 | `createdAt` | number | 创建时间戳（毫秒） |
 | `expiresAt` | number | 销毁时间戳（毫秒） |
+| `roomType` | string | 房间类型 |
+| `historyCount` | number | 长期房轻量历史数量估算 |
 
 **房间不存在** `404 Not Found`
 
@@ -238,7 +247,7 @@ curl -X DELETE https://ephem-backend.xxx.workers.dev/api/rooms/correct-horse-bat
 ### 5.1 连接
 
 ```
-GET wss://ephem-backend.xxx.workers.dev/room/:roomCode?username=<username>
+GET wss://ephem-backend.xxx.workers.dev/room/:roomCode?username=<username>&clientId=<client-id>
 ```
 
 **路径参数**
@@ -252,6 +261,11 @@ GET wss://ephem-backend.xxx.workers.dev/room/:roomCode?username=<username>
 | 参数 | 必填 | 默认 | 长度限制 | 说明 |
 |------|------|------|----------|------|
 | `username` | 否 | `匿名` | 32 字符 | 显示名（超出会被截断） |
+| `clientId` | 否 | 无 | 80 字符 | 推荐。客户端安装/浏览器本地生成并持久化的稳定 ID，用于重连时替换同一客户端的旧连接 |
+
+`clientId` 只用于连接去重，不参与加密，也不应包含用户隐私。官方 Web/Flutter/CLI 客户端会保存一个随机 `clientId`。当代理或网络波动导致旧 WebSocket 没有及时触发 close 时，新连接会用同一 `clientId` 替换旧连接，避免房间人数被幽灵连接占满。
+
+服务端还会根据心跳和消息更新连接活跃时间；长时间没有任何帧的连接会在新连接或状态查询时被回收。客户端应继续每约 25 秒发送一次 `ping`。
 
 **握手响应**
 
@@ -339,7 +353,7 @@ GET wss://ephem-backend.xxx.workers.dev/room/:roomCode?username=<username>
 | `reason` 值 | 说明 |
 |------------|------|
 | `ttl_expired` | TTL 到期 |
-| `empty` | 全员离开超 5 分钟 |
+| `empty` | 旧版空房销毁原因，当前版本默认不再因无人在线销毁 |
 | `manual` | 管理员手动销毁 |
 
 收到此消息后服务端会主动断开连接。客户端有约 1.5 秒的窗口可以显示提示、保存状态。
@@ -366,7 +380,8 @@ GET wss://ephem-backend.xxx.workers.dev/room/:roomCode?username=<username>
   "type": "message",
   "payload": {
     "ciphertext": "<base64>",
-    "nonce": "<base64>"
+    "nonce": "<base64>",
+    "persist": true
   }
 }
 ```
@@ -374,8 +389,48 @@ GET wss://ephem-backend.xxx.workers.dev/room/:roomCode?username=<username>
 加密方式见 [第 6 章](#6-端到端加密协议)。服务端收到后会：
 1. 补上 `from`（你的用户名）和 `timestamp`（当前时间）
 2. 原样广播给房间内**其他**成员（不会回传给你自己）
+3. 对长期房，如果 `persist: true` 且密文体积足够小，会把密文作为轻量历史保存
 
 **注意**：客户端若想在 UI 显示自己发的消息，需在本地保存一份明文并自行渲染。
+
+官方 Web/Flutter 客户端只对文本消息设置 `persist: true`；图片消息设置 `persist: false`，避免大附件进入后端历史。
+
+#### 心跳
+
+```json
+{ "type": "ping" }
+```
+
+服务端不会回包，但会用它刷新连接活跃时间。客户端建议每约 25 秒发送一次；如果本地检测到 socket 关闭，应停止发送并进入重连流程。
+
+#### 长期房历史分页
+
+```json
+{ "type": "history_request", "payload": { "before": "<message-id>", "limit": 50 } }
+```
+
+服务端返回：
+
+```json
+{
+  "type": "history",
+  "payload": {
+    "messages": [
+      {
+        "id": "0000000000000:uuid",
+        "from": "alice",
+        "ciphertext": "<base64>",
+        "nonce": "<base64>",
+        "timestamp": 1782045811151
+      }
+    ],
+    "before": "0000000000000:uuid",
+    "hasMore": true
+  }
+}
+```
+
+客户端首次连接长期房时服务端会自动下发最近一页历史；继续上滑或点击加载更早记录时再发送 `history_request`。
 
 #### 心跳保活
 

@@ -19,12 +19,14 @@ export function requireAdmin(request: Request, env: Env): Response | null {
   return null;
 }
 
+export type RoomType = "ephemeral" | "persistent";
+
 /** POST /api/rooms —— 创建房间。生成房间码、初始化对应 DO、设置 TTL alarm。 */
 export async function createRoom(request: Request, env: Env): Promise<Response> {
   const auth = requireAdmin(request, env);
   if (auth) return auth;
 
-  let body: { maxMembers?: number; ttlSeconds?: number };
+  let body: { maxMembers?: number; ttlSeconds?: number; roomType?: RoomType };
   try {
     body = await request.json();
   } catch {
@@ -32,7 +34,8 @@ export async function createRoom(request: Request, env: Env): Promise<Response> 
   }
 
   const maxMembers = clamp(body.maxMembers ?? 2, 2, HARD_MAX_MEMBERS);
-  const ttlSeconds = clamp(body.ttlSeconds ?? 3600, 60, 24 * 3600);
+  const roomType: RoomType = body.roomType === "persistent" ? "persistent" : "ephemeral";
+  const ttlSeconds = roomType === "persistent" ? 0 : clamp(body.ttlSeconds ?? 3600, 60, 24 * 3600);
 
   // 生成房间码，极小概率哈希冲突时换码重试
   for (let attempt = 0; attempt < 5; attempt++) {
@@ -44,13 +47,13 @@ export async function createRoom(request: Request, env: Env): Promise<Response> 
       new Request("https://do/init", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ maxMembers, ttlSeconds, roomCodeHash: hash }),
+        body: JSON.stringify({ maxMembers, ttlSeconds, roomCodeHash: hash, roomType }),
       }),
     );
 
     if (res.ok) {
-      const data = (await res.json()) as { expiresAt: number };
-      return json({ roomCode, expiresAt: data.expiresAt, maxMembers, ttlSeconds });
+      const data = (await res.json()) as { expiresAt: number | null; roomType: RoomType };
+      return json({ roomCode, expiresAt: data.expiresAt, maxMembers, ttlSeconds, roomType: data.roomType });
     }
     if (res.status !== 409) {
       // 非冲突的内部错误

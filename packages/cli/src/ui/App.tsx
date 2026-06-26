@@ -3,7 +3,7 @@ import { Box, Text, useApp, useInput } from "ink";
 import { SetupWizard, type ConnectConfig } from "./SetupWizard.js";
 import { ChatRoom } from "./ChatRoom.js";
 import { RoomClient, type JoinedInfo } from "../ws/client.js";
-import { type AppConfig, saveConfig } from "../config.js";
+import { ensureClientId, type AppConfig, saveConfig } from "../config.js";
 
 interface Props {
   defaults: { server?: string; room?: string; username?: string };
@@ -33,13 +33,13 @@ export function App({ defaults, initialConfig }: Props) {
 
   const connect = useCallback((config: ConnectConfig) => {
     cfgRef.current = config;
-    const nextConfig = {
+    const nextConfig = ensureClientId({
       ...appConfig,
       server: config.server,
       username: config.username,
-    };
+    });
     updateConfig(nextConfig);
-    const c = new RoomClient(config.server, config.room, config.username, nextConfig.proxy);
+    const c = new RoomClient(config.server, config.room, config.username, nextConfig.proxy, nextConfig.clientId);
     setClient(c);
     setPhase("connecting");
     setError(null);

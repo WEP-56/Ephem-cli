@@ -70,6 +70,7 @@ class _ConnectPageState extends State<ConnectPage> {
 
     // 保存用户名
     await widget.storage.setUsername(user);
+    final clientId = await widget.storage.getClientId();
 
     setState(() {
       _connecting = true;
@@ -84,6 +85,7 @@ class _ConnectPageState extends State<ConnectPage> {
           server: widget.server,
           roomCode: room,
           username: user,
+          clientId: clientId,
         ),
       ),
     );

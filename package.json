@@ -1,6 +1,6 @@
 {
   "name": "ephem",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "private": true,
   "description": "临时、端到端加密的命令行聊天室",
   "scripts": {

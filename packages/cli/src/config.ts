@@ -1,6 +1,7 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { homedir } from "node:os";
+import { randomUUID } from "node:crypto";
 
 export interface ManagedRoomRecord {
   code: string;
@@ -18,6 +19,7 @@ export interface ProxyConfig {
 export interface AppConfig {
   server?: string;
   username?: string;
+  clientId?: string;
   proxy?: ProxyConfig;
   rooms?: ManagedRoomRecord[];
 }
@@ -43,6 +45,11 @@ export async function loadConfig(): Promise<AppConfig> {
   }
 }
 
+export function ensureClientId(config: AppConfig): AppConfig {
+  if (config.clientId) return config;
+  return { ...config, clientId: `cli-${randomUUID()}` };
+}
+
 export async function saveConfig(config: AppConfig): Promise<void> {
   const path = configPath();
   await mkdir(dirname(path), { recursive: true });
@@ -66,6 +73,7 @@ function sanitizeConfig(config: AppConfig): AppConfig {
   return {
     server: typeof config.server === "string" ? config.server.trim() : undefined,
     username: typeof config.username === "string" ? config.username.trim().slice(0, 32) : undefined,
+    clientId: typeof config.clientId === "string" ? config.clientId.trim().slice(0, 80) : undefined,
     proxy: {
       enabled: Boolean(config.proxy?.enabled),
       url: normalizeProxyUrl(typeof config.proxy?.url === "string" ? config.proxy.url : ""),

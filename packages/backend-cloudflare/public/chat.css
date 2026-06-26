@@ -47,6 +47,8 @@ textarea {
   display: grid;
   place-items: center;
   padding: 20px;
+  grid-template-rows: 1fr auto;
+  gap: 10px;
 }
 
 .connect-view,
@@ -224,6 +226,13 @@ button:disabled {
   gap: 8px;
 }
 
+.load-history {
+  align-self: center;
+  color: var(--text);
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+}
+
 .system {
   align-self: center;
   color: var(--amber);
@@ -271,6 +280,7 @@ button:disabled {
   border-radius: 6px;
   margin-top: 4px;
   background: #0d0f12;
+  cursor: zoom-in;
 }
 
 .image-meta {
@@ -296,16 +306,98 @@ button:disabled {
   font-size: 24px;
 }
 
+.bottom-tabs {
+  width: min(100%, 940px);
+  display: flex;
+  gap: 8px;
+}
+
+.tab {
+  flex: 1;
+  background: var(--panel-2);
+  color: var(--muted);
+  border: 1px solid var(--line);
+}
+
+.tab.active {
+  color: #0b1012;
+  background: var(--teal);
+}
+
+.archive-item {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+  align-items: center;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel-2);
+}
+
+.archive-item strong {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.archive-item span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.archive-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  gap: 10px;
+  padding: 20px;
+  background: rgba(0, 0, 0, 0.86);
+}
+
+.lightbox img {
+  min-width: 0;
+  min-height: 0;
+  max-width: 100%;
+  max-height: 100%;
+  justify-self: center;
+  align-self: center;
+  object-fit: contain;
+}
+
+.lightbox button {
+  justify-self: end;
+  width: 42px;
+  height: 42px;
+  padding: 0;
+  font-size: 24px;
+  background: var(--panel-2);
+  color: var(--text);
+}
+
+#lightboxMeta {
+  color: var(--muted);
+  text-align: center;
+  font-size: 13px;
+}
+
 @media (max-width: 680px) {
   .shell {
     padding: 0;
     place-items: stretch;
+    gap: 0;
   }
 
   .connect-view,
   .chat-view {
     width: 100%;
-    height: 100dvh;
+    height: calc(100dvh - 52px);
     border-radius: 0;
     border-left: 0;
     border-right: 0;
@@ -327,5 +419,11 @@ button:disabled {
 
   .composer {
     grid-template-columns: 40px 1fr 58px;
+  }
+
+  .bottom-tabs {
+    width: 100%;
+    padding: 6px;
+    background: var(--bg);
   }
 }

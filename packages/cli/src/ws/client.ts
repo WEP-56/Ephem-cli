@@ -10,7 +10,8 @@ export interface JoinedInfo {
   username: string;
   currentMembers: number;
   maxMembers: number;
-  expiresAt: number;
+  expiresAt: number | null;
+  roomType?: "ephemeral" | "persistent";
 }
 
 export interface ChatMessage {
@@ -51,6 +52,7 @@ export class RoomClient extends EventEmitter {
     private readonly roomCode: string,
     private readonly username: string,
     private readonly proxy?: ProxyConfig,
+    private readonly clientId?: string,
   ) {
     super();
   }
@@ -62,7 +64,7 @@ export class RoomClient extends EventEmitter {
   }
 
   private openSocket(): void {
-    const url = `${normalizeWs(this.server)}/room/${encodeURIComponent(this.roomCode)}?username=${encodeURIComponent(this.username)}`;
+    const url = `${normalizeWs(this.server)}/room/${encodeURIComponent(this.roomCode)}?username=${encodeURIComponent(this.username)}${this.clientId ? `&clientId=${encodeURIComponent(this.clientId)}` : ""}`;
     const useProxy = this.proxy?.enabled && this.proxy.url && url.startsWith("wss://");
     const ws = new WebSocket(url, useProxy ? { agent: new HttpsProxyAgent(this.proxy!.url) } : undefined);
     this.ws = ws;

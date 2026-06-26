@@ -1,10 +1,10 @@
 // RoomObject —— 每个房间一个 Durable Object 实例。
-// 职责：管理房间元数据、处理 WebSocket 连接、原样转发密文（不解密、不留存）、
-//       通过 alarm 实现 TTL 自毁与空房间宽限自毁。
+// 职责：管理房间元数据、处理 WebSocket 连接、原样转发密文（不解密）、
+//       临时房按 TTL 自毁，长期房可保存轻量文本密文历史。
 //
 // 安全要点：
-//   - 持久化只存 RoomMeta（含 roomCodeHash），不存任何消息内容，不存明文房间码。
-//   - 消息只做内存转发，连接关闭后无残留。
+//   - 持久化只存 RoomMeta（含 roomCodeHash），不存明文房间码。
+//   - 长期房历史只存客户端标记为 persist 的小体积密文消息，不保存图片。
 //   - 销毁时 deleteAll() + deleteAlarm()，状态彻底清空。
 
 import { RateLimiter } from "./rateLimit";
@@ -12,9 +12,20 @@ import { RateLimiter } from "./rateLimit";
 /** 持久化的房间元数据（DO storage 里的 'meta' 键）。 */
 export interface RoomMeta {
   roomCodeHash: string;
+  roomType: RoomType;
   maxMembers: number;
   createdAt: number;
-  expiresAt: number;
+  expiresAt: number | null;
+}
+
+export type RoomType = "ephemeral" | "persistent";
+
+interface HistoryEntry {
+  id: string;
+  from: string;
+  ciphertext: string;
+  nonce: string;
+  timestamp: number;
 }
 
 /** 房间内存中的活跃连接。 */
@@ -22,6 +33,8 @@ interface Session {
   username: string;
   ws: WebSocket;
   joinedAt: number;
+  clientId?: string;
+  lastSeen: number;
 }
 
 export type CloseReason = "ttl_expired" | "empty" | "manual";
@@ -33,14 +46,20 @@ const RATE_LIMIT_WINDOW_MS = 60_000;
 const HARD_MAX_MEMBERS = 32;
 /** 用户名最大长度。 */
 const MAX_USERNAME_LEN = 32;
-/** 房间全员断开后，宽限多久再自毁（避免网络抖动误判）。 */
-const EMPTY_GRACE_MS = 5 * 60 * 1000;
 /** 单条客户端 JSON 文本帧上限。图片首版内联传输，限制可避免异常大帧压垮 DO。 */
-const MAX_CLIENT_FRAME_BYTES = 2 * 1024 * 1024;
+const MAX_CLIENT_FRAME_BYTES = 8 * 1024 * 1024;
+/** 长期房历史只保存轻量文本密文，避免图片或异常大消息进入 DO storage。 */
+const MAX_HISTORY_CIPHERTEXT_CHARS = 16 * 1024;
+const HISTORY_PREFIX = "history:";
+const HISTORY_DEFAULT_LIMIT = 50;
+const HISTORY_MAX_LIMIT = 100;
+const STALE_SESSION_MS = 70_000;
+const CLIENT_ID_MAX_LEN = 80;
 
 /** 服务端 → 客户端 消息类型 */
 type ServerMessage =
-  | { type: "joined"; payload: { username: string; currentMembers: number; maxMembers: number; expiresAt: number } }
+  | { type: "joined"; payload: { username: string; currentMembers: number; maxMembers: number; expiresAt: number | null; roomType: RoomType } }
+  | { type: "history"; payload: { messages: HistoryEntry[]; before?: string | null; hasMore: boolean } }
   | { type: "peer_joined"; payload: { username: string } }
   | { type: "peer_left"; payload: { username: string } }
   | { type: "message"; payload: { from: string; ciphertext: string; nonce: string; timestamp: number } }
@@ -77,7 +96,7 @@ export class RoomObject implements DurableObject {
 
   // ─── 初始化（Worker 创建房间时调用） ───────────────────────────
   private async handleInit(request: Request): Promise<Response> {
-    let body: { maxMembers?: number; ttlSeconds?: number; roomCodeHash?: string };
+    let body: { maxMembers?: number; ttlSeconds?: number; roomCodeHash?: string; roomType?: RoomType };
     try {
       body = await request.json();
     } catch {
@@ -93,33 +112,40 @@ export class RoomObject implements DurableObject {
 
     const now = Date.now();
     const maxMembers = clamp(body.maxMembers ?? 2, 2, HARD_MAX_MEMBERS);
-    const ttlSeconds = clamp(body.ttlSeconds ?? 3600, 60, 24 * 3600);
+    const roomType: RoomType = body.roomType === "persistent" ? "persistent" : "ephemeral";
+    const ttlSeconds = roomType === "persistent" ? 0 : clamp(body.ttlSeconds ?? 3600, 60, 24 * 3600);
     const meta: RoomMeta = {
       roomCodeHash: body.roomCodeHash,
+      roomType,
       maxMembers,
       createdAt: now,
-      expiresAt: now + ttlSeconds * 1000,
+      expiresAt: roomType === "persistent" ? null : now + ttlSeconds * 1000,
     };
 
     await this.state.blockConcurrencyWhile(async () => {
       await this.state.storage.put("meta", meta);
-      await this.state.storage.setAlarm(meta.expiresAt);
+      if (meta.expiresAt) await this.state.storage.setAlarm(meta.expiresAt);
     });
 
-    return json({ ok: true, expiresAt: meta.expiresAt });
+    return json({ ok: true, expiresAt: meta.expiresAt, roomType: meta.roomType });
   }
 
   // ─── 状态查询 ─────────────────────────────────────────────────
   private async handleStatus(): Promise<Response> {
     const meta = await this.state.storage.get<RoomMeta>("meta");
     if (!meta) return json({ alive: false, error: "not_found" }, 404);
-    const alive = Date.now() < meta.expiresAt;
+    const roomType = meta.roomType ?? "ephemeral";
+    const expiresAt = meta.expiresAt ?? null;
+    this.pruneStaleSessions(meta);
+    const alive = roomType === "persistent" || (expiresAt !== null && Date.now() < expiresAt);
     return json({
       alive,
+      roomType,
       currentMembers: this.sessions.size,
       maxMembers: meta.maxMembers,
       createdAt: meta.createdAt,
-      expiresAt: meta.expiresAt,
+      expiresAt,
+      historyCount: roomType === "persistent" ? await this.historyCount() : 0,
     });
   }
 
@@ -145,20 +171,26 @@ export class RoomObject implements DurableObject {
     if (!meta) {
       return json({ error: "room_not_found", message: "房间不存在或已销毁" }, 404);
     }
-    if (Date.now() >= meta.expiresAt) {
+    const roomType = meta.roomType ?? "ephemeral";
+    const expiresAt = meta.expiresAt ?? null;
+    if (expiresAt !== null && Date.now() >= expiresAt) {
       return json({ error: "room_expired", message: "房间已过期" }, 410);
-    }
-    if (this.sessions.size >= meta.maxMembers) {
-      return json({ error: "room_full", message: "房间人数已满" }, 403);
     }
 
     const username =
       (url.searchParams.get("username") ?? "匿名").trim().slice(0, MAX_USERNAME_LEN) ||
       "匿名";
+    const clientId = sanitizeClientId(url.searchParams.get("clientId"));
+
+    this.pruneStaleSessions(meta);
+    if (clientId) this.replaceExistingClient(clientId);
+    if (this.sessions.size >= meta.maxMembers) {
+      return json({ error: "room_full", message: "房间人数已满" }, 403);
+    }
 
     const pair = new WebSocketPair();
     const [client, server] = Object.values(pair);
-    const session: Session = { username, ws: server, joinedAt: Date.now() };
+    const session: Session = { username, ws: server, joinedAt: Date.now(), clientId, lastSeen: Date.now() };
     this.sessions.set(server, session);
     server.accept();
 
@@ -169,16 +201,20 @@ export class RoomObject implements DurableObject {
     server.addEventListener("close", () => this.onClose(server, meta));
     server.addEventListener("error", () => this.onClose(server, meta));
 
-    setTimeout(() => {
+    setTimeout(async () => {
       this.send(server, {
         type: "joined",
         payload: {
           username,
           currentMembers: this.sessions.size,
           maxMembers: meta.maxMembers,
-          expiresAt: meta.expiresAt,
+          expiresAt,
+          roomType,
         },
       });
+      if (roomType === "persistent") {
+        await this.sendHistory(server, null, HISTORY_DEFAULT_LIMIT);
+      }
       this.broadcast({ type: "peer_joined", payload: { username } }, server);
       this.rescheduleAlarm(meta);
     }, 0);
@@ -188,7 +224,7 @@ export class RoomObject implements DurableObject {
 
   // ─── 消息处理：原样转发密文 ───────────────────────────────────
   private onMessage(ws: WebSocket, event: MessageEvent) {
-    let msg: { type?: string; payload?: { ciphertext?: string; nonce?: string } };
+    let msg: { type?: string; payload?: { ciphertext?: string; nonce?: string; persist?: boolean; before?: string; limit?: number } };
     const raw = event.data;
     if (typeof raw !== "string") {
       this.send(ws, {
@@ -217,21 +253,33 @@ export class RoomObject implements DurableObject {
     if (msg.type === "message") {
       const session = this.sessions.get(ws);
       if (!session) return;
+      session.lastSeen = Date.now();
+      const outgoing = {
+        from: session.username,
+        ciphertext: msg.payload?.ciphertext ?? "",
+        nonce: msg.payload?.nonce ?? "",
+        timestamp: Date.now(),
+      };
+      void this.maybePersistHistory(outgoing, msg.payload?.persist === true);
       // 后端不解密、不校验内容，只补一个时间戳并转发给其他成员
       this.broadcast(
         {
           type: "message",
-          payload: {
-            from: session.username,
-            ciphertext: msg.payload?.ciphertext ?? "",
-            nonce: msg.payload?.nonce ?? "",
-            timestamp: Date.now(),
-          },
+          payload: outgoing,
         },
         ws,
       );
     }
-    // ping 心跳：服务端无需回应，有流量即可保活
+    if (msg.type === "history_request") {
+      const session = this.sessions.get(ws);
+      if (session) session.lastSeen = Date.now();
+      const limit = clamp(msg.payload?.limit ?? HISTORY_DEFAULT_LIMIT, 1, HISTORY_MAX_LIMIT);
+      void this.sendHistory(ws, msg.payload?.before, limit);
+    }
+    if (msg.type === "ping") {
+      const session = this.sessions.get(ws);
+      if (session) session.lastSeen = Date.now();
+    }
   }
 
   // ─── 连接关闭 ─────────────────────────────────────────────────
@@ -241,18 +289,19 @@ export class RoomObject implements DurableObject {
     if (session) {
       this.broadcast({ type: "peer_left", payload: { username: session.username } });
     }
-    if (this.sessions.size === 0) {
-      // 全员离开 → 进入空房间宽限倒计时
-      this.rescheduleAlarm(meta);
-    }
+    if (this.sessions.size === 0) this.rescheduleAlarm(meta);
   }
 
   // ─── alarm：TTL 到期或空房间宽限到期 ─────────────────────────
   async alarm(): Promise<void> {
     const meta = await this.state.storage.get<RoomMeta>("meta");
     if (!meta) return;
-    const reason: CloseReason = Date.now() >= meta.expiresAt ? "ttl_expired" : "empty";
-    await this.destroyRoom(reason);
+    if ((meta.roomType ?? "ephemeral") === "persistent" || meta.expiresAt === null) return;
+    if (Date.now() < meta.expiresAt) {
+      await this.state.storage.setAlarm(meta.expiresAt);
+      return;
+    }
+    await this.destroyRoom("ttl_expired");
   }
 
   // ─── 销毁房间 ─────────────────────────────────────────────────
@@ -272,13 +321,75 @@ export class RoomObject implements DurableObject {
 
   // ─── 重新排程 alarm ───────────────────────────────────────────
   private async rescheduleAlarm(meta: RoomMeta) {
-    const now = Date.now();
-    const fireAt =
-      this.sessions.size === 0
-        ? Math.min(meta.expiresAt, now + EMPTY_GRACE_MS)
-        : meta.expiresAt;
-    // 确保至少 1s 后触发，避免立即销毁
-    await this.state.storage.setAlarm(Math.max(fireAt, now + 1000));
+    if ((meta.roomType ?? "ephemeral") === "persistent" || meta.expiresAt === null) {
+      await this.state.storage.deleteAlarm();
+      return;
+    }
+    // 临时房只按 TTL 销毁，不再因全部成员离开而提前销毁。
+    await this.state.storage.setAlarm(Math.max(meta.expiresAt, Date.now() + 1000));
+  }
+
+  private async maybePersistHistory(message: Omit<HistoryEntry, "id">, persist: boolean) {
+    if (!persist || message.ciphertext.length > MAX_HISTORY_CIPHERTEXT_CHARS) return;
+    const meta = await this.state.storage.get<RoomMeta>("meta");
+    if ((meta?.roomType ?? "ephemeral") !== "persistent") return;
+    const id = `${message.timestamp.toString().padStart(13, "0")}:${crypto.randomUUID()}`;
+    const entry: HistoryEntry = { id, ...message };
+    await this.state.storage.put(`${HISTORY_PREFIX}${id}`, entry);
+  }
+
+  private async sendHistory(ws: WebSocket, before?: string | null, limit = HISTORY_DEFAULT_LIMIT) {
+    const page = await this.getHistoryPage(before, limit);
+    this.send(ws, { type: "history", payload: page });
+  }
+
+  private async getHistoryPage(before?: string | null, limit = HISTORY_DEFAULT_LIMIT): Promise<{ messages: HistoryEntry[]; before: string | null; hasMore: boolean }> {
+    const items = await this.state.storage.list<HistoryEntry>({
+      prefix: HISTORY_PREFIX,
+      end: before ? `${HISTORY_PREFIX}${before}` : undefined,
+      reverse: true,
+      limit: limit + 1,
+    });
+    const values = [...items.values()];
+    const hasMore = values.length > limit;
+    const messages = values.slice(0, limit).reverse();
+    return { messages, before: messages[0]?.id ?? null, hasMore };
+  }
+
+  private async historyCount(): Promise<number> {
+    const items = await this.state.storage.list<HistoryEntry>({
+      prefix: HISTORY_PREFIX,
+      limit: HISTORY_MAX_LIMIT + 1,
+    });
+    return items.size;
+  }
+
+  private pruneStaleSessions(meta: RoomMeta) {
+    const cutoff = Date.now() - STALE_SESSION_MS;
+    for (const [ws, session] of this.sessions.entries()) {
+      if (session.lastSeen >= cutoff) continue;
+      this.dropSession(ws, meta, "stale");
+    }
+  }
+
+  private replaceExistingClient(clientId: string) {
+    for (const [ws, session] of this.sessions.entries()) {
+      if (session.clientId !== clientId) continue;
+      this.dropSession(ws, undefined, "replaced");
+    }
+  }
+
+  private dropSession(ws: WebSocket, meta?: RoomMeta, reason = "closed") {
+    const session = this.sessions.get(ws);
+    this.sessions.delete(ws);
+    if (!session) return;
+    try {
+      ws.close(1000, reason);
+    } catch {
+      /* ignore */
+    }
+    this.broadcast({ type: "peer_left", payload: { username: session.username } });
+    if (meta && this.sessions.size === 0) this.rescheduleAlarm(meta);
   }
 
   // ─── 工具方法 ─────────────────────────────────────────────────
@@ -313,4 +424,10 @@ function json(body: unknown, status = 200): Response {
 function clamp(n: number, min: number, max: number): number {
   if (!Number.isFinite(n)) return min;
   return Math.max(min, Math.min(max, Math.floor(n)));
+}
+
+function sanitizeClientId(value: string | null): string | undefined {
+  const id = value?.trim().slice(0, CLIENT_ID_MAX_LEN);
+  if (!id || !/^[a-zA-Z0-9._:-]+$/.test(id)) return undefined;
+  return id;
 }

@@ -3,23 +3,26 @@ import 'dart:io';
 
 class CreateRoomResult {
   final String roomCode;
-  final int expiresAt;
+  final int? expiresAt;
   final int maxMembers;
   final int ttlSeconds;
+  final String roomType;
 
   const CreateRoomResult({
     required this.roomCode,
     required this.expiresAt,
     required this.maxMembers,
     required this.ttlSeconds,
+    required this.roomType,
   });
 
   factory CreateRoomResult.fromJson(Map<String, dynamic> json) =>
       CreateRoomResult(
         roomCode: json['roomCode'] as String,
-        expiresAt: (json['expiresAt'] as num).toInt(),
+        expiresAt: (json['expiresAt'] as num?)?.toInt(),
         maxMembers: (json['maxMembers'] as num).toInt(),
         ttlSeconds: (json['ttlSeconds'] as num).toInt(),
+        roomType: json['roomType']?.toString() ?? 'ephemeral',
       );
 }
 
@@ -29,6 +32,8 @@ class RoomStatusResult {
   final int? maxMembers;
   final int? createdAt;
   final int? expiresAt;
+  final String roomType;
+  final int? historyCount;
   final String? error;
 
   const RoomStatusResult({
@@ -37,6 +42,8 @@ class RoomStatusResult {
     this.maxMembers,
     this.createdAt,
     this.expiresAt,
+    this.roomType = 'ephemeral',
+    this.historyCount,
     this.error,
   });
 
@@ -47,6 +54,8 @@ class RoomStatusResult {
         maxMembers: (json['maxMembers'] as num?)?.toInt(),
         createdAt: (json['createdAt'] as num?)?.toInt(),
         expiresAt: (json['expiresAt'] as num?)?.toInt(),
+        roomType: json['roomType']?.toString() ?? 'ephemeral',
+        historyCount: (json['historyCount'] as num?)?.toInt(),
         error: json['error']?.toString(),
       );
 }
@@ -76,12 +85,14 @@ class AdminApiService {
   Future<CreateRoomResult> createRoom({
     required int maxMembers,
     required int ttlSeconds,
+    String roomType = 'ephemeral',
   }) async {
     final json = await _request(
       'POST',
       '/api/rooms',
       body: {
         'maxMembers': maxMembers,
+        'roomType': roomType,
         'ttlSeconds': ttlSeconds,
       },
     );

@@ -39,11 +39,13 @@ class EphemClient {
   final String server;
   final String roomCode;
   final String username;
+  final String clientId;
 
   WebSocketChannel? _channel;
   StreamSubscription? _sub;
   Timer? _pingTimer;
   bool _manuallyClosed = false;
+  bool _closed = true;
 
   /// 收到服务端消息的广播流
   final _messageController = StreamController<ServerMessage>.broadcast();
@@ -57,12 +59,14 @@ class EphemClient {
     required this.server,
     required this.roomCode,
     required this.username,
+    required this.clientId,
   });
 
   /// 建立 WS 连接。失败抛 ConnectRejectedException。
   Future<void> connect() async {
     final url = '${_normalizeWs(server)}/room/${Uri.encodeComponent(roomCode)}'
-        '?username=${Uri.encodeComponent(username)}';
+        '?username=${Uri.encodeComponent(username)}'
+        '&clientId=${Uri.encodeComponent(clientId)}';
 
     final uri = Uri.parse(url);
     WebSocketChannel ch;
@@ -72,6 +76,7 @@ class EphemClient {
       throw ConnectRejectedException(0, 'connect_failed', e.toString());
     }
     _channel = ch;
+    _closed = false;
 
     // 监听 stream。web_socket_channel 在握手失败时会触发 onError，
     // 但具体 HTTP 状态码需要从错误信息里解析（平台相关）。
@@ -87,6 +92,7 @@ class EphemClient {
         }
       },
       onError: (e) {
+        _closed = true;
         // 握手失败或运行时错误。把原始错误透传给上层。
         final msg = e.toString();
         // 尝试从错误消息里识别常见错误码
@@ -108,6 +114,7 @@ class EphemClient {
         }
       },
       onDone: () {
+        _closed = true;
         _stopPing();
         _closeController.add(null);
       },
@@ -119,21 +126,48 @@ class EphemClient {
 
   /// 发送一条已加密的消息（密文 + nonce，都是 base64 字符串）
   void sendMessage(String ciphertext, String nonce) {
+    if (!isOpen) throw StateError('连接未就绪');
     _channel?.sink.add(jsonEncode({
       'type': 'message',
       'payload': {'ciphertext': ciphertext, 'nonce': nonce},
     }));
   }
 
+  void sendMessageWithOptions(String ciphertext, String nonce,
+      {bool persist = true}) {
+    if (!isOpen) throw StateError('连接未就绪');
+    _channel?.sink.add(jsonEncode({
+      'type': 'message',
+      'payload': {
+        'ciphertext': ciphertext,
+        'nonce': nonce,
+        'persist': persist,
+      },
+    }));
+  }
+
+  void requestHistory({String? before, int limit = 50}) {
+    if (!isOpen) return;
+    _channel?.sink.add(jsonEncode({
+      'type': 'history_request',
+      'payload': {
+        if (before != null) 'before': before,
+        'limit': limit,
+      },
+    }));
+  }
+
   /// 主动关闭连接（不触发重连）
   void close() {
     _manuallyClosed = true;
+    _closed = true;
     _stopPing();
     _sub?.cancel();
     _channel?.sink.close();
   }
 
   bool get isManuallyClosed => _manuallyClosed;
+  bool get isOpen => _channel != null && !_closed;
 
   void _startPing() {
     _stopPing();

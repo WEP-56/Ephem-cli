@@ -18,8 +18,10 @@ class RoomInfo {
   final String username;
   final int currentMembers;
   final int maxMembers;
-  final int expiresAt;
-  RoomInfo(this.username, this.currentMembers, this.maxMembers, this.expiresAt);
+  final int? expiresAt;
+  final String roomType;
+  RoomInfo(this.username, this.currentMembers, this.maxMembers, this.expiresAt,
+      {this.roomType = 'ephemeral'});
 }
 
 /// UI 关心的事件
@@ -44,14 +46,25 @@ class MessageEvent extends ChatEvent {
   final String from;
   final String text; // 已解密的明文
   final int timestamp;
-  MessageEvent(this.from, this.text, this.timestamp);
+  final bool historical;
+  final String? historyId;
+  MessageEvent(this.from, this.text, this.timestamp,
+      {this.historical = false, this.historyId});
 }
 
 class ImageMessageEvent extends ChatEvent {
   final String from;
   final EphemImageMessage image;
   final int timestamp;
-  ImageMessageEvent(this.from, this.image, this.timestamp);
+  final bool historical;
+  ImageMessageEvent(this.from, this.image, this.timestamp,
+      {this.historical = false});
+}
+
+class HistoryPageEvent extends ChatEvent {
+  final bool hasMore;
+  final String? before;
+  HistoryPageEvent({required this.hasMore, required this.before});
 }
 
 class DecryptFailedEvent extends ChatEvent {
@@ -88,8 +101,9 @@ class ChatController extends ChangeNotifier {
     required String server,
     required String roomCode,
     required String username,
+    required String clientId,
   }) : _client =
-            EphemClient(server: server, roomCode: roomCode, username: username);
+            EphemClient(server: server, roomCode: roomCode, username: username, clientId: clientId);
 
   /// 连接并派生密钥
   Future<void> start(String roomCode) async {
@@ -110,7 +124,8 @@ class ChatController extends ChangeNotifier {
             p['username'] as String,
             p['currentMembers'] as int,
             p['maxMembers'] as int,
-            p['expiresAt'] as int,
+            (p['expiresAt'] as num?)?.toInt(),
+            roomType: p['roomType']?.toString() ?? 'ephemeral',
           );
           _eventController.add(JoinedEvent(info!));
           break;
@@ -124,6 +139,9 @@ class ChatController extends ChangeNotifier {
           break;
         case 'message':
           _handleMessage(msg.payload);
+          break;
+        case 'history':
+          _handleHistory(msg.payload);
           break;
         case 'room_closing':
           isClosing = true;
@@ -147,11 +165,13 @@ class ChatController extends ChangeNotifier {
     await _client.connect();
   }
 
-  Future<void> _handleMessage(Map<String, dynamic> payload) async {
+  Future<void> _handleMessage(Map<String, dynamic> payload,
+      {bool historical = false}) async {
     final from = payload['from'] as String? ?? '未知';
     final ciphertext = payload['ciphertext'] as String?;
     final nonce = payload['nonce'] as String?;
     final timestamp = payload['timestamp'] as int? ?? 0;
+    final historyId = payload['id']?.toString();
     if (ciphertext == null || nonce == null || _roomKey == null) {
       _eventController.add(DecryptFailedEvent(from));
       return;
@@ -164,13 +184,30 @@ class ChatController extends ChangeNotifier {
       final parsed = parsePlaintextMessage(text);
       switch (parsed) {
         case EphemTextMessage():
-          _eventController.add(MessageEvent(from, parsed.text, timestamp));
+          _eventController.add(MessageEvent(from, parsed.text, timestamp,
+              historical: historical, historyId: historyId));
         case EphemImageMessage():
-          _eventController.add(ImageMessageEvent(from, parsed, timestamp));
+          _eventController.add(
+              ImageMessageEvent(from, parsed, timestamp, historical: historical));
       }
     } catch (e) {
       _eventController.add(DecryptFailedEvent(from));
     }
+  }
+
+  Future<void> _handleHistory(Map<String, dynamic> payload) async {
+    final messages = payload['messages'];
+    if (messages is List) {
+      for (final item in messages.reversed) {
+        if (item is Map<String, dynamic>) {
+          await _handleMessage(item, historical: true);
+        }
+      }
+    }
+    _eventController.add(HistoryPageEvent(
+      hasMore: payload['hasMore'] == true,
+      before: payload['before']?.toString(),
+    ));
   }
 
   /// 发送一条消息（会自动加密）。返回 false 表示加密失败。
@@ -179,7 +216,8 @@ class ChatController extends ChangeNotifier {
     try {
       final payload =
           await EphemCrypto.encrypt(_roomKey!, encodeTextMessage(text));
-      _client.sendMessage(payload.ciphertext, payload.nonce);
+      _client.sendMessageWithOptions(payload.ciphertext, payload.nonce,
+          persist: true);
       return true;
     } catch (e) {
       return false;
@@ -192,11 +230,16 @@ class ChatController extends ChangeNotifier {
     try {
       final payload =
           await EphemCrypto.encrypt(_roomKey!, encodeImageMessage(image));
-      _client.sendMessage(payload.ciphertext, payload.nonce);
+      _client.sendMessageWithOptions(payload.ciphertext, payload.nonce,
+          persist: false);
       return true;
     } catch (e) {
       return false;
     }
+  }
+
+  void requestHistory({String? before, int limit = 50}) {
+    _client.requestHistory(before: before, limit: limit);
   }
 
   @override
